@@ -62,42 +62,59 @@ app.post('/logout', wrap(auth.logout));
 // ---- Public pages ----
 app.get('/', wrap(async (req, res) => {
   if (!req.user) return res.send(views.landing());
-  const space = await db.spaceByOwner(req.user.id);
+  const space = await db.spaceByUser(req.user.id);
   res.redirect(303, space ? `/f/${space.key}` : '/signup');
 }));
 
 // ---- Sign-up: a signed-in parent names their family ----
 app.get('/signup', wrap(async (req, res) => {
   if (!req.user) return res.redirect(303, '/');
-  const space = await db.spaceByOwner(req.user.id);
+  const space = await db.spaceByUser(req.user.id);
   if (space) return res.redirect(303, `/f/${space.key}`);
   res.send(views.signup({ user: req.user }));
 }));
 
 app.post('/signup', wrap(async (req, res) => {
   if (!req.user) return res.redirect(303, '/');
-  const existing = await db.spaceByOwner(req.user.id);
+  const existing = await db.spaceByUser(req.user.id);
   if (existing) return res.redirect(303, `/f/${existing.key}`);
   const space = await db.createSpace(req.body?.name, req.user.id);
   res.redirect(303, `/f/${space.key}?welcome=1`);
 }));
 
-// ---- Family space: only the signed-in owner gets in ----
+// ---- Invite link from another parent ----
+app.get('/join/:token', wrap(async (req, res) => {
+  const invite = await db.inviteByToken(req.params.token);
+  if (!invite) return res.status(404).send(views.notFound('This invite link has expired or has already been used. Ask for a new one.'));
+  const mine = req.user ? await db.spaceByUser(req.user.id) : null;
+  if (mine && mine.id === invite.space.id) return res.redirect(303, `/f/${mine.key}`);
+  res.send(views.join({ space: invite.space, token: req.params.token, user: req.user, mine }));
+}));
+
+app.post('/join/:token', wrap(async (req, res) => {
+  if (!req.user) return res.redirect(303, `/join/${encodeURIComponent(req.params.token)}`);
+  const space = await db.acceptInvite(req.params.token, req.user.id);
+  res.redirect(303, space ? `/f/${space.key}` : `/join/${encodeURIComponent(req.params.token)}`);
+}));
+
+// ---- Family space: only signed-in parents of this family get in ----
 const withSpace = wrap(async (req, res, next) => {
   const space = await db.spaceByKey(req.params.key);
   if (!space) return res.status(404).send(views.notFound('This timeline link is not valid.'));
   // A timeline made before sign-in existed: whoever holds the link signs in once to make it theirs.
   if (!space.owner_id) return res.status(req.method === 'GET' ? 200 : 403).send(views.claim({ space, user: req.user }));
   if (!req.user) return res.redirect(303, '/');
-  if (req.user.id !== space.owner_id) return res.status(404).send(views.notFound('This timeline belongs to a different account.'));
+  if (!(await db.isMember(space.id, req.user.id))) return res.status(404).send(views.notFound('This timeline belongs to a different account.'));
   req.space = space;
+  req.isOwner = req.user.id === space.owner_id;
   next();
 });
 
 app.get('/f/:key', withSpace, wrap(async (req, res) => {
   const [data, stamp] = await Promise.all([boardData(req.space.id, req.query), db.stamp(req.space.id)]);
-  const upcoming = await db.listAppointments(req.space.id, { child: data.child, from: localNow(req) });
-  res.send(views.timeline({ space: req.space, ...data, upcoming, stamp, welcome: req.query.welcome === '1' }));
+  const now = localNow(req);
+  const upcoming = await db.listAppointments(req.space.id, { child: data.child, from: now });
+  res.send(views.timeline({ space: req.space, ...data, upcoming, now, stamp, welcome: req.query.welcome === '1' }));
 }));
 
 app.get('/f/:key/stamp', withSpace, wrap(async (req, res) => res.type('text').send(await db.stamp(req.space.id))));
@@ -109,6 +126,29 @@ app.get('/f/:key/connect', withSpace, (req, res) =>
 app.post('/f/:key/connect/rotate', withSpace, wrap(async (req, res) => {
   const space = await db.rotateKey(req.space.id);
   res.redirect(303, `/f/${space.key}/connect?replaced=1`);
+}));
+
+// ---- Parents: who can open this family, and the invite link ----
+app.get('/f/:key/parents', withSpace, wrap(async (req, res) => {
+  const [members, invite] = await Promise.all([db.listMembers(req.space.id), db.currentInvite(req.space.id)]);
+  res.send(views.parents({ space: req.space, members, invite, base: baseUrl(req), me: req.user, isOwner: req.isOwner }));
+}));
+
+app.post('/f/:key/parents/invite', withSpace, wrap(async (req, res) => {
+  await db.createInvite(req.space.id);
+  res.redirect(303, `/f/${req.space.key}/parents`);
+}));
+
+app.post('/f/:key/parents/invite/delete', withSpace, wrap(async (req, res) => {
+  await db.cancelInvites(req.space.id);
+  res.redirect(303, `/f/${req.space.key}/parents`);
+}));
+
+// The parent who created the family can remove anyone else; an invited parent can only remove themselves.
+app.post('/f/:key/parents/:id/remove', withSpace, wrap(async (req, res) => {
+  const self = String(req.user.id) === req.params.id;
+  if (req.isOwner || self) await db.removeMember(req.space.id, req.params.id);
+  res.redirect(303, self && !req.isOwner ? '/' : `/f/${req.space.key}/parents`);
 }));
 
 // ---- Share with doctor ----

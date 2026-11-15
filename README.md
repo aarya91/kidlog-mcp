@@ -15,7 +15,7 @@ KidLog has no AI inside. Your own Claude does the reading and writing; KidLog on
 ## What you need
 
 - A Claude account on a plan that allows custom connectors.
-- The KidLog site: **https://kidlog-alpha.vercel.app**
+- The KidLog site: **https://kidlog-mcp.vercel.app**
 
 ## Set it up (about 3 minutes)
 
@@ -31,7 +31,7 @@ If you created a timeline before sign-in existed, open your old private link onc
 
 ### 2. Connect Claude
 
-In KidLog, open **Connect Claude** and copy your connection link. It looks like `https://kidlog-alpha.vercel.app/mcp/…` and is different for every family.
+In KidLog, open **Connect Claude** and copy your connection link. It looks like `https://kidlog-mcp.vercel.app/mcp/…` and is different for every family.
 
 ![The Connect Claude page with the connection link and steps](docs/screenshots/connect.png)
 
@@ -76,7 +76,7 @@ Every entry has an **Edit entry** button. Change the time, the wording, the temp
 
 ### See one child at a time
 
-Use the buttons above the timeline (**All children**, then one per child) or the switcher at the top right. **Flagged only** shows just the entries marked for the doctor, and the period menu narrows the list to the last 7, 30 or 90 days.
+Use the buttons above the timeline: **All children**, then one per child. **Flagged only** shows just the entries marked for the doctor, and the period menu narrows the list to the last 7, 30 or 90 days.
 
 Manage names and birth dates on the **Children** page. The birth date is used to show the child's age.
 
@@ -84,9 +84,18 @@ Manage names and birth dates on the **Children** page. The birth date is used to
 
 ### Keep appointments in view
 
-The **Upcoming** card on the right of the timeline shows the next doctor or vaccine appointment for the child you are viewing. Click **Add appointment** to add as many as you need, or **See all** for the full list.
+The **Upcoming appointments** card sits at the top of the right-hand panel. It shows the next doctor or vaccine appointment for the child you are viewing, with its date, time and notes, and how soon it is ("Tomorrow", "2 days to go"). Click **View details** to edit it, **Add appointment** to add as many as you need, or **View all** for the full list.
 
 ![The appointments list](docs/screenshots/appointments.png)
+
+### Invite the other parent
+
+Click **Invite** on the **Invite another parent** card beside the timeline, or open **Parents**, and click **Create invite link**, then send the link yourself, for example on WhatsApp. The other parent opens it, signs in with Google, and gets the same timeline with full access to add and edit.
+
+- An invite link works once and expires after 7 days. You can cancel it before it is used.
+- A Google account can belong to one family only.
+- The parent who created the family can remove other parents. An invited parent can leave.
+- If you remove a parent who also had the Claude connection link, replace that link on the **Connect Claude** page.
 
 ### Share with your doctor
 
@@ -105,8 +114,8 @@ Every link you create is listed on the same page with a **Turn off** button. A l
 
 ## Good to know
 
-- **Privacy:** your timeline opens only when you are signed in with your Google account. KidLog stores your Google name and email address, never a password. Your Claude connection link acts as a password, so keep it to yourself. Share links for doctors are separate and read-only.
-- **One family per account:** each Google account has one family timeline.
+- **Privacy:** your timeline opens only for the Google accounts listed on the **Parents** page. KidLog stores your Google name and email address, never a password. Your Claude connection link acts as a password, so keep it to yourself. Share links for doctors are separate and read-only.
+- **One family per account:** each Google account belongs to one family timeline, either one it created or one it was invited to.
 - **Not medical advice:** KidLog stores what you tell it. It does not diagnose, rate urgency or suggest treatment. If you are worried about your child, contact your doctor.
 - **Works on your phone:** the connector works in Claude on the web, desktop and mobile, and the KidLog site works in any browser.
 
@@ -120,6 +129,8 @@ Every link you create is listed on the same page with a **Turn off** button. A l
 | "Unknown KidLog link" | The connection link was copied incompletely. Copy it again from the **Connect Claude** page. |
 | I can't find my timeline | Open the KidLog site and click **Sign in** with the Google account you signed up with. |
 | "This timeline belongs to a different account" | You are signed in with a different Google account. Click **Sign out** and sign in with the right one. |
+| The invite link says it has expired or was already used | Each link works once, for 7 days. Create a new one on the **Parents** page. |
+| The invited parent sees "already belongs to the family…" | Their Google account already has its own KidLog family. They need to sign in with a different Google account. |
 | Claude stopped saving after I replaced the link | Remove the KidLog connector in Claude and add it again with the new link from **Connect Claude**. |
 
 ---
@@ -142,7 +153,7 @@ One small Node.js service serves both the web pages and the MCP endpoint. There 
 | Storage | Postgres (tables are created automatically on first request) |
 | MCP | `@modelcontextprotocol/sdk`, Streamable HTTP, stateless (a fresh server per request, so it runs on serverless hosts) |
 | Pages | Server-rendered HTML with inline CSS; no front-end framework or build step |
-| Access | Web pages: Google sign-in (OAuth, written by hand with `fetch`) and a session cookie; each family has one owner account. MCP and doctor links: unguessable random keys in the URL |
+| Access | Web pages: Google sign-in (OAuth, written by hand with `fetch`) and a session cookie; a family can have several parent accounts, joined by invite link. MCP and doctor links: unguessable random keys in the URL |
 
 ## MCP tools
 
@@ -167,9 +178,11 @@ The server's instructions tell Claude to record only what the parent said, to ad
 | `/` | Home page; sends a signed-in parent to their timeline |
 | `/auth/google`, `/auth/google/callback` | Google sign-in; `POST /logout` signs out |
 | `/signup` | Family name form shown after the first sign-in; `POST` creates the family |
-| `/f/<key>` | Timeline (query: `child`, `flagged=1`, `range=7|30|90`). All `/f/` pages need the owner to be signed in |
+| `/f/<key>` | Timeline (query: `child`, `flagged=1`, `range=7|30|90`). All `/f/` pages need a parent of that family to be signed in |
 | `/f/<key>/e/<id>` | Edit an entry; `/new` adds one |
 | `/f/<key>/kids` | Child profiles |
+| `/f/<key>/parents` | Parents with access; create or cancel the invite link, remove a parent |
+| `/join/<token>` | Invite link: sign in and join the family |
 | `/f/<key>/appointments` | Appointments list, add and edit |
 | `/f/<key>/share` | Create and turn off doctor share links |
 | `/f/<key>/connect` | The MCP link and setup steps; `POST /connect/rotate` replaces the family key |
@@ -182,13 +195,15 @@ The server's instructions tell Claude to record only what the parent said, to ad
 |---|---|
 | `users` | One row per Google account: Google id, email, name |
 | `sessions` | Signed-in browsers: hash of the cookie token, user, expiry (30 days) |
-| `spaces` | One row per family: private key, name, owner account |
+| `spaces` | One row per family: private key, name, the account that created it |
+| `space_members` | Which accounts can open which family; one family per account |
+| `invites` | Pending invite link per family: token, expiry (7 days); deleted when used |
 | `children` | Name and birth date, unique per family |
 | `entries` | Health events: child, time, category, title, details, temperature, flag, source |
 | `appointments` | Upcoming visits: child, type, time, title, notes |
 | `shares` | Doctor links: token, child (or all), flagged-only setting |
 
-A family created before sign-in existed has no owner. The first person to open its `/f/<key>` link and sign in becomes the owner.
+A family created before sign-in existed has no owner. The first person to open its `/f/<key>` link and sign in becomes the owner. Families created with the first version of sign-in get their owner added to `space_members` automatically.
 
 Dates and times are stored as local text (`YYYY-MM-DDTHH:MM`) exactly as the parent gave them, with no timezone conversion.
 
@@ -207,7 +222,7 @@ Then open http://localhost:3000.
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and open **Google Auth Platform**. Fill in the app name and support email, and choose **External** as the audience.
 2. Under **Clients**, create an OAuth client of type **Web application**.
 3. Add an **Authorised redirect URI** for every address the app runs at, ending in `/auth/google/callback`:
-   - `https://kidlog-alpha.vercel.app/auth/google/callback`
+   - `https://kidlog-mcp.vercel.app/auth/google/callback`
    - `http://localhost:3000/auth/google/callback`
 4. Copy the client ID and client secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 5. Publish the app (move it out of **Testing**) so that any Google account can sign in, not only the test users you list.
@@ -218,7 +233,7 @@ Then open http://localhost:3000.
 | `PORT` | No | Port to listen on; defaults to 3000 |
 | `GOOGLE_CLIENT_ID` | Yes | OAuth client ID from Google |
 | `GOOGLE_CLIENT_SECRET` | Yes | OAuth client secret from Google |
-| `PUBLIC_URL` | Recommended | Public address used in generated links and in the Google redirect address, e.g. `https://kidlog-alpha.vercel.app`; defaults to the request's host |
+| `PUBLIC_URL` | Recommended | Public address used in generated links and in the Google redirect address, e.g. `https://kidlog-mcp.vercel.app`; defaults to the request's host |
 
 ## Deploy
 

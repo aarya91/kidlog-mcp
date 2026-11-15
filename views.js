@@ -85,7 +85,7 @@ footer{color:var(--muted);font-size:13.5px;margin-top:40px;border-top:1px solid 
 .stat div span{display:block;font-size:13.5px;color:var(--muted)}.stat b{font-size:16px}
 .ico{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none}
 .stat .ico,.counts .ico{width:32px;height:32px}.stat .ico svg,.counts .ico svg{width:17px;height:17px}
-.cols{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px;align-items:start;margin-top:18px}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:28px;align-items:start;margin-top:18px}
 .tlhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .tlhead h2.big{font-size:22px;color:var(--ink);margin:0;margin-right:auto;letter-spacing:-.01em}
 .tlhead select{width:auto;padding:8px 12px}
@@ -110,28 +110,37 @@ footer{color:var(--muted);font-size:13.5px;margin-top:40px;border-top:1px solid 
 @media print{.cols{grid-template-columns:1fr}.entry{break-inside:avoid}}
 .mini{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#8b7fe8,#4b45b0);color:#fff;font-weight:700;font-size:14px;display:grid;place-items:center;flex:none}
 .mini.big{width:44px;height:44px;font-size:19px}
-.switch{position:relative}
-.switch summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 10px 5px 5px;border-radius:999px;background:var(--soft);color:var(--brand);font-weight:600;font-size:14.5px}
-.switch summary::-webkit-details-marker{display:none}
-.switch .menu{position:absolute;right:0;top:calc(100% + 8px);background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 32px rgba(31,29,61,.14);padding:6px;min-width:230px;z-index:10}
-.switch .menu a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;text-decoration:none;color:var(--ink)}
-.switch .menu a:hover,.switch .menu a.on{background:var(--soft)}
-.switch .menu small{display:block;color:var(--muted);font-size:12.5px}
-.switch .menu a.manage{border-top:1px solid var(--line);border-radius:0 0 10px 10px;margin-top:4px;color:var(--brand);font-weight:600;font-size:14.5px}
 .kid{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:10px 0;flex-wrap:wrap}
 .kinfo{flex:1;min-width:140px}.kinfo b{display:block}.kinfo>span{display:block;color:var(--muted);font-size:14.5px}
 input[type=date]{width:100%;padding:10px 12px;border:1px solid #cfcce0;border-radius:10px;font:inherit;background:#fff;color:var(--ink)}
 .chips .gap{width:10px}
 .side.plain{background:var(--card);border:1px solid var(--line)}
-.side .next{display:flex;gap:12px;align-items:flex-start;margin:10px 0 12px}
-.side .next b{display:block;font-size:16px;line-height:1.3}.side .next div span{display:block;font-size:14.5px;color:#3d3a66}
-.side .next .ico{width:36px;height:36px}.side .next .ico svg{width:19px;height:19px}
-.side .next .nnote{color:var(--muted);margin-top:2px}
-.side .more{margin:-4px 0 12px;font-size:14px;color:var(--muted)}
 .card.ok{border-color:#9fd3b8;background:#f1faf5}
 .kid.nextup{border-color:var(--brand);box-shadow:inset 4px 0 0 var(--brand)}
 .kinfo .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;word-break:break-all}
 .kid .ico{width:36px;height:36px}.kid .ico svg{width:19px;height:19px}
+.upnext{background:var(--card);border:2px solid var(--brand);border-radius:16px;margin-bottom:16px;overflow:hidden}
+.uphead{display:flex;align-items:center;gap:10px;background:#e9e6fb;padding:12px 16px}
+.uphead h3{margin:0;font-size:16.5px;margin-right:auto;letter-spacing:-.01em}
+.upico{color:var(--brand);display:grid;place-items:center}.upico svg{width:22px;height:22px}
+.viewall{display:inline-flex;align-items:center;gap:4px;font-size:14px;font-weight:600;text-decoration:none;white-space:nowrap}.viewall svg{width:15px;height:15px}
+.upbody{padding:14px 16px 16px}.upbody .none{margin:0 0 12px;color:var(--muted)}
+.upmain{display:flex;gap:14px;align-items:flex-start}
+.datetile{flex:none;width:64px;border-radius:12px;background:var(--soft);color:var(--ink);text-align:center;padding:8px 0;line-height:1.15}
+.datetile span{display:block;font-size:14px;font-weight:600}.datetile b{display:block;font-size:28px;letter-spacing:-.02em}
+.datetile.k-vaccine{background:#fbecd7}
+.upinfo{min-width:0;border-left:1px solid var(--line);padding-left:14px}
+.upinfo>b{display:block;font-size:17px;line-height:1.3;margin-bottom:4px}
+.upinfo>span{display:flex;gap:7px;align-items:flex-start;font-size:14px;color:#3d3a66;margin-top:3px}
+.upinfo>span>svg{width:16px;height:16px;flex:none;margin-top:2px;color:var(--brand)}
+.upinfo .ico{width:16px;height:16px;margin-top:2px}.upinfo .ico svg{width:10px;height:10px}
+.upfoot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--soft);border-radius:10px;padding:8px 12px;margin:14px 0 12px;font-size:14px}
+.upfoot .togo{display:inline-flex;align-items:center;gap:6px;color:var(--brand)}.upfoot .togo svg{width:16px;height:16px}
+.upfoot .more{color:var(--muted);margin-left:auto}
+.side.invite{display:flex;gap:14px;align-items:flex-start;border:1px solid #b9e3cf}
+.side.invite .pico{flex:none;width:44px;height:44px;border-radius:50%;background:#1f9d8a;color:#fff;display:grid;place-items:center}.side.invite .pico svg{width:24px;height:24px}
+.side.invite p{margin:4px 0 12px}
+.side.invite .btn{display:inline-flex;align-items:center;gap:6px}.side.invite .btn svg{width:15px;height:15px}
 @media print{header.top,.noprint{display:none!important}body{background:#fff}.card{break-inside:avoid}}
 `;
 
@@ -150,24 +159,13 @@ function page({ title, nav = '', body, head = '', wide = false }) {
 </main></body></html>`;
 }
 
-function spaceNav(space, on, extra = '') {
+function spaceNav(space, on) {
   const b = `/f/${esc(space.key)}`;
   const a = (href, id, label) => `<a href="${href}"${on === id ? ' class="on" aria-current="page"' : ''}>${label}</a>`;
-  return `<nav>${a(b, 'timeline', 'Timeline')}${a(b + '/kids', 'kids', 'Children')}${a(b + '/connect', 'connect', 'Connect Claude')}${a(b + '/share', 'share', 'Share with doctor')}</nav>${extra}<form method="post" action="/logout" class="noprint" style="margin:0"><button class="btn ghost small">Sign out</button></form>`;
+  return `<nav>${a(b, 'timeline', 'Timeline')}${a(b + '/kids', 'kids', 'Children')}${a(b + '/parents', 'parents', 'Parents')}${a(b + '/connect', 'connect', 'Connect Claude')}${a(b + '/share', 'share', 'Share with doctor')}</nav><form method="post" action="/logout" class="noprint" style="margin:0"><button class="btn ghost small">Sign out</button></form>`;
 }
 
 const initial = (name) => esc(String(name).trim().charAt(0).toUpperCase() || '?');
-
-// Top-right child switcher, as a plain <details> menu (no script needed).
-function switcher({ children, shown, hrefFor, manageHref }) {
-  if (!children.length) return '';
-  const item = (c) => `<a href="${hrefFor(c.child)}"${shown && shown.id === c.id ? ' class="on"' : ''}><span class="mini">${initial(c.child)}</span><span><b>${esc(c.child)}</b>${c.dob ? `<small>${esc(ageLabel(c.dob))}</small>` : ''}</span></a>`;
-  return `<details class="switch noprint"><summary aria-label="Switch child"><span class="mini">${shown ? initial(shown.child) : '&#8226;&#8226;'}</span><span class="swname">${shown ? esc(shown.child) : 'All children'}</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
-    <div class="menu">${children.map(item).join('')}
-      ${children.length > 1 ? `<a href="${hrefFor('')}"${shown ? '' : ' class="on"'}><span class="mini">&#8226;&#8226;</span><span><b>All children</b></span></a>` : ''}
-      ${manageHref ? `<a class="manage" href="${manageHref}">Add or edit children</a>` : ''}
-    </div></details>`;
-}
 
 const ICON = {
   symptom: ['#e5533d', '<path d="M3 12h4l3-8 4 16 3-8h4"/>'],
@@ -238,29 +236,60 @@ function filterChips({ children, child, base, flagged, range, lock = {} }) {
 
 const KIND = { doctor: ['doctor_visit', 'Doctor appointment'], vaccine: ['vaccine', 'Vaccine appointment'] };
 
-// Right-panel card: the next appointment coming up, with a way to add more and see the rest.
-function upcomingCard({ base, upcoming, shown }) {
+const DAY_MS = 86400000;
+const dayNumber = (w) => { const [y, m, d] = w.slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / DAY_MS; };
+// "Today", "Tomorrow", "2 days to go": how far away an appointment is from the parent's local date.
+function daysToGo(when, now) {
+  const n = Math.round(dayNumber(when) - dayNumber(now));
+  return n <= 0 ? 'Today' : n === 1 ? 'Tomorrow' : `${n} days to go`;
+}
+
+const glyph = (paths) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const G = {
+  calendar: glyph('<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/>'),
+  clock: glyph('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  note: glyph('<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/>'),
+  bell: glyph('<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>'),
+  people: glyph('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.5a5 5 0 0 1 4.5 5"/>'),
+  arrow: glyph('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+};
+
+// Right-panel card: the next doctor or vaccine appointment, with the date on a tear-off tile.
+function upcomingCard({ base, upcoming, shown, now }) {
   const q = shown ? `?child=${encodeURIComponent(shown.child)}` : '';
-  const next = upcoming[0];
-  const body = next
-    ? `<div class="next">${icon(KIND[next.kind][0])}<div>
-         <b>${esc(next.title)}</b>
-         <span>${shortDay(next.scheduled_at)} · ${timeLabel(next.scheduled_at)}</span>
-         <span>${esc(KIND[next.kind][1])}${shown ? '' : ` · ${esc(next.child)}`}</span>
-         ${next.notes ? `<span class="nnote">${esc(next.notes)}</span>` : ''}
-       </div></div>
-       ${upcoming.length > 1 ? `<p class="more">+ ${upcoming.length - 1} more coming up</p>` : ''}`
-    : `<p>No upcoming appointments${shown ? ` for ${esc(shown.child)}` : ''}.</p>`;
-  return `<div class="side violet noprint"><h3>Upcoming</h3>${body}
-    <div class="row"><a class="btn small" href="${base}/appointments/new${q}">Add appointment</a>${next ? `<a class="btn ghost small" href="${base}/appointments${q}">${upcoming.length > 1 ? 'See all' : 'View details'}</a>` : `<a class="btn ghost small" href="${base}/appointments${q}">Past appointments</a>`}</div>
-  </div>`;
+  const a = upcoming[0];
+  const head = `<div class="uphead"><span class="upico">${G.calendar}</span><h3>Upcoming appointments</h3>
+      <a class="viewall" href="${base}/appointments${q}">${a ? 'View all' : 'Past'} ${G.arrow}</a></div>`;
+  if (!a) {
+    return `<section class="upnext noprint" aria-label="Upcoming appointments">${head}
+      <div class="upbody"><p class="none">Nothing booked${shown ? ` for ${esc(shown.child)}` : ''}.</p>
+      <a class="btn small" href="${base}/appointments/new${q}">Add appointment</a></div></section>`;
+  }
+  const [y, m, d] = a.scheduled_at.slice(0, 10).split('-').map(Number);
+  const dow = SHORT_DAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  const more = upcoming.length - 1;
+  return `<section class="upnext noprint" aria-label="Upcoming appointments">${head}
+    <div class="upbody">
+      <div class="upmain">
+        <div class="datetile k-${esc(a.kind)}" aria-label="${shortDay(a.scheduled_at)}"><span>${dow}</span><b>${d}</b><span>${MONTHS[m - 1].slice(0, 3)}</span></div>
+        <div class="upinfo">
+          <b>${esc(a.title)}</b>
+          <span>${G.clock}${timeLabel(a.scheduled_at)}</span>
+          <span>${icon(KIND[a.kind][0])}${esc(KIND[a.kind][1])}${shown ? '' : ` · ${esc(a.child)}`}</span>
+          ${a.notes ? `<span>${G.note}${esc(a.notes)}</span>` : ''}
+        </div>
+      </div>
+      <div class="upfoot"><span class="togo">${G.bell}<b>${daysToGo(a.scheduled_at, now)}</b></span>${more > 0 ? `<span class="more">+ ${more} more coming up</span>` : ''}</div>
+      <div class="row"><a class="btn small" href="${base}/appointments/${a.id}">View details</a><a class="btn ghost small" href="${base}/appointments/new${q}">Add appointment</a></div>
+    </div>
+  </section>`;
 }
 
 const pickShown = (children, child) =>
   child ? children.find((c) => c.child.toLowerCase() === child.toLowerCase()) : children.length === 1 ? children[0] : null;
 
 // Shared by the family timeline and the read-only doctor view.
-function board({ space, base, all, entries, children, child, flagged, range, readOnly, shareHref, connectHref, lock = {}, upcoming = [] }) {
+function board({ space, base, all, entries, children, child, flagged, range, readOnly, shareHref, connectHref, lock = {}, upcoming = [], now = '' }) {
   const shown = pickShown(children, child);
   const age = shown ? ageLabel(shown.dob) : '';
   const total = shown && !lock.flaggedOnly ? shown.entries : all.length; // a flagged-only link must not reveal the full count
@@ -305,16 +334,17 @@ function board({ space, base, all, entries, children, child, flagged, range, rea
         ${list}
       </div>
       <aside>
-        <div class="side green"><h3>Quick overview</h3><p class="sub">${rangeLabel}</p><ul class="counts">
+        ${readOnly ? '' : `${upcomingCard({ base, upcoming, shown, now })}
+        <div class="side green invite noprint"><span class="pico">${G.people}</span><div><h3>Invite another parent</h3><p>Let your partner or a family member see and add to this timeline.</p><a class="btn small" href="${base}/parents">Invite ${G.arrow}</a></div></div>`}
+        <div class="side amber"><h3>Quick overview</h3><p class="sub">${rangeLabel}</p><ul class="counts">
           ${row('symptom', 'Symptom entries', count('symptom'))}
           ${row('temperature', 'Temperature readings', count('temperature'))}
           ${row('medicine', 'Medicine doses', count('medicine'))}
           ${row('feeding', 'Feeding notes', count('feeding'))}
           ${row('sleep', 'Sleep notes', count('sleep'))}
         </ul></div>
-        ${readOnly ? '' : `${upcomingCard({ base, upcoming, shown })}
-        <div class="side plain noprint"><h3>Share with doctor</h3><p>Send a read-only link${shown ? ` for ${esc(shown.child)}` : ''}: everything, or only flagged entries.</p><a class="btn ghost small" href="${shareHref}${shown ? `?child=${encodeURIComponent(shown.child)}` : ''}">Create a link</a></div>
-        <div class="side amber noprint"><h3>Tell Claude</h3><p>"Aarav had 5 ml paracetamol at 8 this morning. Temperature was 100.2 F before."</p><a class="btn ghost small" href="${connectHref}">Connect Claude</a></div>`}
+        ${readOnly ? '' : `<div class="side plain noprint"><h3>Share with doctor</h3><p>Send a read-only link${shown ? ` for ${esc(shown.child)}` : ''}: everything, or only flagged entries.</p><a class="btn ghost small" href="${shareHref}${shown ? `?child=${encodeURIComponent(shown.child)}` : ''}">Create a link</a></div>
+        <div class="side violet noprint"><h3>Tell Claude</h3><p>"Aarav had 5 ml paracetamol at 8 this morning. Temperature was 100.2 F before."</p><a class="btn ghost small" href="${connectHref}">Connect Claude</a></div>`}
       </aside>
     </div>`;
 }
@@ -327,7 +357,7 @@ export function landing({ error } = {}) {
       <p class="lead">At 2 AM you describe the night to Claude in your own words. KidLog keeps it as a clean, dated record you can correct and hand to the paediatrician.</p>
       <p class="row"><a class="btn" href="/auth/google">Sign up with Google</a><a class="btn ghost" href="/auth/google">Sign in</a></p>
       ${error ? `<div class="err">${esc(error)}</div>` : ''}
-      <p class="lead" style="margin-top:10px;font-size:14.5px">No password to remember. Only you can open your family's timeline.</p>
+      <p class="lead" style="margin-top:10px;font-size:14.5px">No password to remember. Only you, and a parent you invite, can open your family's timeline.</p>
     </section>
     <div class="grid3">
       <div class="card"><b>1. Connect Claude</b>Paste one link into Claude's connector settings.</div>
@@ -365,14 +395,62 @@ export function claim({ space }) {
   });
 }
 
-export function timeline({ space, all, entries, children, child, flagged, range, upcoming, stamp, welcome }) {
+// An invite link from another parent, opened by someone who is not in that family yet.
+export function join({ space, token, user, mine }) {
+  const t = encodeURIComponent(token);
+  const body = !user
+    ? `<p class="lead">Sign in with Google to see and add to this family's timeline alongside the parent who invited you.</p>
+       <p><a class="btn" href="/auth/google?join=${t}">Sign in with Google to join</a></p>`
+    : mine
+      ? `<p class="lead">You are signed in as ${esc(user.email)}, which already belongs to the family "${esc(mine.name)}". A Google account can be in one family only.</p>
+         <p class="row"><a class="btn" href="/f/${esc(mine.key)}">Go to ${esc(mine.name)}</a></p>
+         <form method="post" action="/logout"><button class="btn ghost small">Sign out to use a different Google account</button></form>`
+      : `<p class="lead">You are signed in as ${esc(user.email)}. Joining lets you see and add to this family's timeline.</p>
+         <form method="post" action="/join/${t}" class="row"><button class="btn">Join ${esc(space.name)}</button></form>`;
+  return page({ title: `Join ${space.name} · KidLog`, body: `<h1>You are invited to join ${esc(space.name)}</h1>${body}` });
+}
+
+const dateOnly = (d) => { const x = new Date(d); return `${x.getUTCDate()} ${MONTHS[x.getUTCMonth()].slice(0, 3)} ${x.getUTCFullYear()}`; };
+
+export function parents({ space, members, invite, base, me, isOwner }) {
+  const b = `/f/${esc(space.key)}`;
+  const row = (m) => {
+    const self = m.id === me.id;
+    const remove = m.owner ? '' : self
+      ? `<form method="post" action="${b}/parents/${m.id}/remove" style="margin:0" onsubmit="return window.confirm('Leave this family? You will no longer be able to open its timeline.')"><button class="btn danger small">Leave</button></form>`
+      : isOwner
+        ? `<form method="post" action="${b}/parents/${m.id}/remove" style="margin:0" onsubmit="return window.confirm('Remove this parent? They will no longer be able to open the timeline.')"><button class="btn danger small">Remove</button></form>`
+        : '';
+    return `<div class="kid"><span class="mini big">${initial(m.name || m.email)}</span>
+      <div class="kinfo"><b>${esc(m.name || m.email)}${self ? ' <span class="tag plain">You</span>' : ''}</b>
+        <span>${esc(m.email)} · ${m.owner ? 'created this family' : `joined ${dateOnly(m.joined_at)}`}</span></div>${remove}</div>`;
+  };
+  const inviteBox = invite
+    ? `<p style="margin:0 0 10px">Send this link to the other parent. They sign in with Google and join this family. It works once, until ${dateOnly(invite.expires_at)}.</p>
+       ${copyBox('invite', `${base}/join/${invite.token}`)}
+       <form method="post" action="${b}/parents/invite/delete" style="margin:12px 0 0"><button class="btn danger small">Cancel this invite</button></form>`
+    : `<p style="margin:0 0 12px">Create a link and send it to the other parent yourself, for example on WhatsApp. They sign in with Google and get the same timeline, with full access to add and edit.</p>
+       <form method="post" action="${b}/parents/invite" style="margin:0"><button class="btn">Create invite link</button></form>`;
+  return page({
+    title: 'Parents · KidLog',
+    nav: spaceNav(space, 'parents'),
+    body: `<h1>Parents</h1>
+      <p class="lead">Everyone listed here can see and edit ${esc(space.name)}'s timeline.</p>
+      ${members.map(row).join('')}
+      <h2>Invite another parent</h2>
+      <div class="card">${inviteBox}</div>
+      <p class="note" style="margin-top:18px">Removing a parent stops their sign-in from opening this family. If they also had the Claude connection link, replace it on the <a href="${b}/connect">Connect Claude</a> page.</p>`,
+  });
+}
+
+export function timeline({ space, all, entries, children, child, flagged, range, upcoming, now, stamp, welcome }) {
   const base = `/f/${esc(space.key)}`;
   return page({
     title: `${space.name} · KidLog`,
-    nav: spaceNav(space, 'timeline', switcher({ children, shown: pickShown(children, child), hrefFor: (c) => base + qs(c, flagged, range), manageHref: `${base}/kids` })),
+    nav: spaceNav(space, 'timeline'),
     wide: true,
     body: `${welcome ? `<p class="note" style="margin-top:20px">Your timeline is ready. Sign in with Google at any time to get back to it. Next,<a href="${base}/connect">connect Claude</a>.</p>` : ''}
-      ${board({ space, base, all, entries, children, child, flagged, range, upcoming, readOnly: false, shareHref: `${base}/share`, connectHref: `${base}/connect` })}
+      ${board({ space, base, all, entries, children, child, flagged, range, upcoming, now, readOnly: false, shareHref: `${base}/share`, connectHref: `${base}/connect` })}
       <script>
       (function(){var s=${JSON.stringify(stamp)};setInterval(function(){
         if(document.hidden)return;
@@ -486,8 +564,7 @@ export function doctorView({ space, token, lock = {}, all, entries, children, ch
   const scope = `${lock.child ? esc(lock.child) : 'All children'}${lock.flaggedOnly ? ' · flagged entries only' : ''}`;
   return page({
     title: `${lock.child || space.name} · health timeline`,
-    nav: `<nav><a class="on">Read-only view for the doctor · ${scope}</a></nav>` +
-      (lock.child ? '' : switcher({ children, shown: pickShown(children, child), hrefFor: (c) => `/d/${esc(token)}` + qs(c, lock.flaggedOnly ? false : flagged, range) })),
+    nav: `<nav><a class="on">Read-only view for the doctor · ${scope}</a></nav>`,
     wide: true,
     body: board({ space, base: `/d/${esc(token)}`, all, entries, children, child: lock.child || child, flagged: lock.flaggedOnly ? false : flagged, range, readOnly: true, lock }),
   });
