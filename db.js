@@ -39,6 +39,21 @@ export function init() {
       );
       ALTER TABLE spaces ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id);
       CREATE UNIQUE INDEX IF NOT EXISTS spaces_owner_idx ON spaces(owner_id) WHERE owner_id IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS space_members (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+        joined_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      INSERT INTO space_members (user_id, space_id)
+        SELECT owner_id, id FROM spaces WHERE owner_id IS NOT NULL
+        ON CONFLICT (user_id) DO NOTHING;
+      CREATE TABLE IF NOT EXISTS invites (
+        id SERIAL PRIMARY KEY,
+        space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+        token TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
       CREATE TABLE IF NOT EXISTS entries (
         id SERIAL PRIMARY KEY,
         space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -94,15 +109,18 @@ export function init() {
 
 const token = (n) => crypto.randomBytes(n).toString('base64url');
 
-// One family per account. Returns the existing family if this account already has one.
+// One family per account. Returns the existing family if this account already belongs to one.
 export async function createSpace(name, ownerId) {
   await init();
+  const mine = await spaceByUser(ownerId);
+  if (mine) return mine;
   const r = await pool.query(
     `INSERT INTO spaces (key, share_token, name, owner_id) VALUES ($1, $2, $3, $4)
      ON CONFLICT (owner_id) WHERE owner_id IS NOT NULL DO NOTHING RETURNING *`,
     [token(18), token(18), clean(name, 80) || 'Our family', ownerId]
   );
-  return r.rows[0] || spaceByOwner(ownerId);
+  if (r.rows[0]) await addMember(r.rows[0].id, ownerId);
+  return r.rows[0] || spaceByUser(ownerId);
 }
 
 // ---- Accounts and login sessions ----
@@ -140,16 +158,90 @@ export async function deleteSession(t) {
   await pool.query('DELETE FROM sessions WHERE token_hash = $1', [hash(t)]);
 }
 
-export async function spaceByOwner(userId) {
+// The family this account belongs to, whether they created it or were invited.
+export async function spaceByUser(userId) {
   await init();
-  const r = await pool.query('SELECT * FROM spaces WHERE owner_id = $1', [userId]);
+  const r = await pool.query('SELECT s.* FROM space_members m JOIN spaces s ON s.id = m.space_id WHERE m.user_id = $1', [userId]);
   return r.rows[0];
 }
 
 // Attaches a timeline made before sign-in existed to an account. Only works while it has no owner.
 export async function claimSpace(key, userId) {
   const r = await pool.query('UPDATE spaces SET owner_id = $1 WHERE key = $2 AND owner_id IS NULL RETURNING *', [userId, String(key)]);
+  if (r.rows[0]) await addMember(r.rows[0].id, userId);
   return r.rows[0];
+}
+
+// ---- Parents: everyone who can open a family's timeline ----
+async function addMember(spaceId, userId) {
+  const r = await pool.query('INSERT INTO space_members (user_id, space_id) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING', [userId, spaceId]);
+  return r.rowCount === 1;
+}
+
+export async function isMember(spaceId, userId) {
+  const r = await pool.query('SELECT 1 FROM space_members WHERE space_id = $1 AND user_id = $2', [spaceId, userId]);
+  return r.rowCount === 1;
+}
+
+// The parent who created the family comes first.
+export async function listMembers(spaceId) {
+  const r = await pool.query(
+    `SELECT u.id, u.name, u.email, m.joined_at, (u.id = s.owner_id) AS owner
+     FROM space_members m JOIN users u ON u.id = m.user_id JOIN spaces s ON s.id = m.space_id
+     WHERE m.space_id = $1 ORDER BY (u.id = s.owner_id) DESC, m.joined_at`,
+    [spaceId]
+  );
+  return r.rows;
+}
+
+// The parent who created the family can never be removed.
+export async function removeMember(spaceId, userId) {
+  const n = Number(userId);
+  if (!Number.isInteger(n)) return;
+  await pool.query(
+    'DELETE FROM space_members m USING spaces s WHERE s.id = m.space_id AND m.space_id = $1 AND m.user_id = $2 AND s.owner_id <> m.user_id',
+    [spaceId, n]
+  );
+}
+
+// ---- Invite links for another parent: one at a time, single use, valid for 7 days ----
+export const INVITE_DAYS = 7;
+
+export async function currentInvite(spaceId) {
+  const r = await pool.query('SELECT * FROM invites WHERE space_id = $1 AND expires_at > now() ORDER BY id DESC LIMIT 1', [spaceId]);
+  return r.rows[0];
+}
+
+export async function createInvite(spaceId) {
+  await pool.query('DELETE FROM invites WHERE expires_at <= now()');
+  const existing = await currentInvite(spaceId);
+  if (existing) return existing;
+  const r = await pool.query(
+    'INSERT INTO invites (space_id, token, expires_at) VALUES ($1, $2, now() + make_interval(days => $3)) RETURNING *',
+    [spaceId, token(18), INVITE_DAYS]
+  );
+  return r.rows[0];
+}
+
+export async function cancelInvites(spaceId) {
+  await pool.query('DELETE FROM invites WHERE space_id = $1', [spaceId]);
+}
+
+// Returns { space } for an invite that can still be used, or undefined.
+export async function inviteByToken(t) {
+  await init();
+  const r = await pool.query('SELECT s.* FROM invites i JOIN spaces s ON s.id = i.space_id WHERE i.token = $1 AND i.expires_at > now()', [String(t)]);
+  return r.rows[0] ? { space: r.rows[0] } : undefined;
+}
+
+// Uses up the invite and adds the account to the family. Returns the family, or undefined if the
+// invite is no longer valid or the account already belongs to a family.
+export async function acceptInvite(t, userId) {
+  if (await spaceByUser(userId)) return undefined;
+  const r = await pool.query('DELETE FROM invites WHERE token = $1 AND expires_at > now() RETURNING space_id', [String(t)]);
+  if (!r.rows[0]) return undefined;
+  await addMember(r.rows[0].space_id, userId);
+  return spaceByUser(userId);
 }
 
 // Replaces the family key, which switches off the old Claude connection link.
