@@ -5,6 +5,7 @@ import * as views from './views.js';
 
 const SESSION_COOKIE = 'kl_session';
 const STATE_COOKIE = 'kl_oauth';
+const NEXT_COOKIE = 'kl_next';
 const SESSION_DAYS = 30;
 
 const clientId = () => process.env.GOOGLE_CLIENT_ID || '';
@@ -22,6 +23,12 @@ function setCookie(req, res, name, value, maxAgeSeconds) {
   if (req.secure) parts.push('Secure');
   res.append('Set-Cookie', parts.join('; '));
 }
+
+// The Claude connector's approval page needs the parent signed in and in a family. These remember where
+// to return to while they sign in or sign up. Only our own /authorize address is ever accepted.
+export function rememberNext(req, res) { setCookie(req, res, NEXT_COOKIE, req.originalUrl, 600); }
+export function nextUrl(req) { const n = readCookie(req, NEXT_COOKIE); return n.startsWith('/authorize?') ? n : ''; }
+export function clearNext(req, res) { setCookie(req, res, NEXT_COOKIE, '', 0); }
 
 // Sets req.user ({ id, email, name }) when the visitor is signed in, otherwise null.
 export async function loadUser(req, res, next) {
@@ -81,6 +88,9 @@ export async function googleCallback(req, res, baseUrl) {
     return res.redirect(303, space ? `/f/${space.key}` : `/join/${join}`);
   }
   if (!space && claim) space = await db.claimSpace(claim, user.id);
+  // Signing in on the way to connecting Claude: go back to the approval page (after naming the family, if new).
+  const next = nextUrl(req);
+  if (space && next) { clearNext(req, res); return res.redirect(303, next); }
   res.redirect(303, space ? `/f/${space.key}` : '/signup');
 }
 

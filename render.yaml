@@ -17,6 +17,11 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      # Public https address of the site, and the contact address shown in the privacy policy.
+      - key: PUBLIC_URL
+        sync: false
+      - key: SUPPORT_EMAIL
+        sync: false
 databases:
   - name: kidlog-db
     plan: free
