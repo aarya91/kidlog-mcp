@@ -29,8 +29,7 @@ a{color:var(--brand)}
 .wrap{max-width:760px;margin:0 auto;padding:0 18px 64px}
 header.top{background:var(--card);border-bottom:1px solid var(--line)}
 header.top .wrap{display:flex;align-items:center;gap:18px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap}
-.logo{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:19px;color:var(--ink);text-decoration:none;letter-spacing:-.01em}
-.logo span{color:var(--brand)}
+.logo{display:inline-flex;align-items:center;text-decoration:none}.logo img{display:block;height:44px;width:auto}
 nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
 nav a{padding:7px 12px;border-radius:999px;text-decoration:none;color:var(--muted);font-size:14.5px;font-weight:500}
 nav a.on{background:var(--soft);color:var(--brand)}
@@ -175,8 +174,8 @@ body.homebg{background:radial-gradient(900px 500px at 78% -10%,#ebe8fb 0,transpa
 @media print{header.top,.noprint{display:none!important}body{background:#fff}.card{break-inside:avoid}}
 `;
 
-// KidLog's own mark: a heart with a pulse line.
-const LOGO = '<svg viewBox="0 0 32 32" width="30" height="30" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 27S4.5 20.3 4.5 12a6.2 6.2 0 0 1 11.5-3.2A6.2 6.2 0 0 1 27.5 12C27.5 20.3 16 27 16 27z" fill="#fff" stroke="#1f6f63" stroke-width="2.4"/><path d="M8 15.5h4l2-4 3.5 8 2-4H24" stroke="#e5533d" stroke-width="2.2"/></svg>';
+// The KidLog logo (heart mark and name). The image files live in public/.
+const LOGO = '<img src="/logo.png" alt="KidLog" width="143" height="44">';
 
 function page({ title, nav = '', body, head = '', wide = false, bodyClass = '' }) {
   return `<!doctype html>
@@ -184,10 +183,11 @@ function page({ title, nav = '', body, head = '', wide = false, bodyClass = '' }
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${esc(title)}</title>
+<link rel="icon" type="image/png" href="/favicon.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>${CSS}</style>${head}
 <script>try{document.cookie='tz='+(-new Date().getTimezoneOffset())+';path=/;max-age=31536000;samesite=lax'}catch(e){}</script>
 </head><body${bodyClass ? ` class="${bodyClass}"` : ''}>
-<header class="top"><div class="wrap${wide ? ' wide' : ''}"><a class="logo" href="/">${LOGO}<b>Kid<span>Log</span></b></a>${nav}</div></header>
+<header class="top"><div class="wrap${wide ? ' wide' : ''}"><a class="logo" href="/">${LOGO}</a>${nav}</div></header>
 <main class="wrap${wide ? ' wide' : ''}">${body}
 <footer>KidLog records what you tell it so you can show your doctor. It does not give medical advice. If you are worried about your child, contact your doctor.
 <span class="flinks noprint"><a href="/how-it-works">How it works</a> · <a href="/privacy">Privacy</a></span></footer>
