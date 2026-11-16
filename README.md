@@ -286,4 +286,5 @@ Then open http://localhost:3000.
 | `server.js` | Starts the app on a normal host |
 | `api/index.js`, `vercel.json` | Entry point and routing for Vercel |
 | `render.yaml` | Blueprint for Render |
+| `public/` | Logo and icons: `logo.png` (top bar), `favicon.png`, `apple-touch-icon.png`, `icon-512.png` (connector listing) |
 | `docs/screenshots/` | Images used in this README |

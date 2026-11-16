@@ -1,5 +1,6 @@
 // KidLog web app + Claude connection in one Express app.
 import express from 'express';
+import { fileURLToPath } from 'node:url';
 import * as db from './db.js';
 import * as views from './views.js';
 import { handleMcp } from './mcp.js';
@@ -9,6 +10,8 @@ import * as oauth from './oauth.js';
 const app = express();
 app.set('trust proxy', true);
 app.disable('x-powered-by');
+// Logo and icons. On Vercel the public/ folder is served by the platform itself; this line covers other hosts.
+app.use(express.static(fileURLToPath(new URL('./public', import.meta.url)), { maxAge: '1d', index: false }));
 app.use(express.json({ limit: '200kb' }));
 app.use(express.urlencoded({ extended: false, limit: '200kb' }));
 app.use((req, res, next) => {
