@@ -21,9 +21,9 @@ KidLog has no AI inside. Your own Claude does the reading and writing; KidLog on
 
 ### 1. Create your family timeline
 
-Open the KidLog site and click **Sign up with Google**. Choose your Google account, type a family name, and click **Create my family timeline**.
+Open the KidLog site and click **Continue with Google**. Choose your Google account, type a family name, and click **Create my family timeline**.
 
-There is no password to remember. To get back in later, open the KidLog site and click **Sign in**. Only your Google account can open your timeline.
+There is no password to remember. To get back in later, open the KidLog site and click **Continue with Google** or **Sign in**. Only your Google account can open your timeline.
 
 If you created a timeline before sign-in existed, open your old private link once and click **Sign in with Google**. The timeline is then attached to your account and the old link stops working for anyone else.
 
@@ -176,6 +176,7 @@ The server's instructions tell Claude to record only what the parent said, to ad
 | Route | Purpose |
 |---|---|
 | `/` | Home page; sends a signed-in parent to their timeline |
+| `/how-it-works` | Public page explaining the app step by step |
 | `/auth/google`, `/auth/google/callback` | Google sign-in; `POST /logout` signs out |
 | `/signup` | Family name form shown after the first sign-in; `POST` creates the family |
 | `/f/<key>` | Timeline (query: `child`, `flagged=1`, `range=7|30|90`). All `/f/` pages need a parent of that family to be signed in |

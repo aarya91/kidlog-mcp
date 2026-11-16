@@ -29,7 +29,7 @@ a{color:var(--brand)}
 .wrap{max-width:760px;margin:0 auto;padding:0 18px 64px}
 header.top{background:var(--card);border-bottom:1px solid var(--line)}
 header.top .wrap{display:flex;align-items:center;gap:18px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap}
-.logo{font-weight:700;font-size:19px;color:var(--ink);text-decoration:none;letter-spacing:-.01em}
+.logo{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:19px;color:var(--ink);text-decoration:none;letter-spacing:-.01em}
 .logo span{color:var(--brand)}
 nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
 nav a{padding:7px 12px;border-radius:999px;text-decoration:none;color:var(--muted);font-size:14.5px;font-weight:500}
@@ -71,10 +71,7 @@ ol.steps{padding-left:22px}ol.steps li{margin:8px 0}
 .empty{text-align:center;padding:36px 20px;color:var(--muted)}
 .say{background:#fbfaff;border:1px dashed #cfcce0;border-radius:10px;padding:10px 14px;margin:8px 0;font-style:italic}
 footer{color:var(--muted);font-size:13.5px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
-.hero{padding:44px 0 8px}.hero h1{font-size:36px;max-width:16ch}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:24px 0}
-.grid3 .card{margin:0}.grid3 b{display:block;margin-bottom:4px}
-@media(max-width:620px){.two,.grid3{grid-template-columns:1fr}.hero h1{font-size:29px}nav{margin-left:0}}
+@media(max-width:620px){.two{grid-template-columns:1fr}nav{margin-left:0}}
 .wrap.wide{max-width:1120px}
 .profile{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:28px 0 8px}
 .avatar{width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,#8b7fe8,#4b45b0);color:#fff;font-size:36px;font-weight:700;display:grid;place-items:center;flex:none}
@@ -141,10 +138,44 @@ input[type=date]{width:100%;padding:10px 12px;border:1px solid #cfcce0;border-ra
 .side.invite .pico{flex:none;width:44px;height:44px;border-radius:50%;background:#1f9d8a;color:#fff;display:grid;place-items:center}.side.invite .pico svg{width:24px;height:24px}
 .side.invite p{margin:4px 0 12px}
 .side.invite .btn{display:inline-flex;align-items:center;gap:6px}.side.invite .btn svg{width:15px;height:15px}
+nav.pub{align-items:center;gap:10px}nav.pub a{color:var(--ink);font-size:15.5px}
+nav.pub a.pill{border:1.5px solid #bdb7ee;color:var(--brand);font-weight:600;padding:7px 18px;background:var(--card)}
+.home{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.85fr);gap:56px;align-items:start;padding:40px 0 8px}
+.pitch h1{font-size:54px;line-height:1.08;letter-spacing:-.03em;margin:0 0 20px}
+.pitch h1 .hl{color:#7c6fe0;border-bottom:5px solid #7c6fe0;border-radius:0 0 6px 6px}
+.pitch .lead{font-size:20px;line-height:1.5;color:#34325a;max-width:34em;margin:0 0 26px}
+.demo{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:14px;box-shadow:0 10px 30px rgba(75,69,176,.08)}
+.demo .said{display:flex;gap:14px;align-items:center;background:#e9e6fb;border-radius:16px;padding:14px 18px;font-size:17px;color:#2a2757}
+.demo .said svg{flex:none;color:var(--brand)}
+.demo .by{display:flex;flex-direction:column;align-items:center;gap:2px;margin:6px 0 10px;color:var(--muted)}
+.demo .bypill{display:inline-flex;align-items:center;gap:8px;background:#f1f0f8;border-radius:999px;padding:6px 18px 6px 12px;font-weight:700;color:var(--ink)}
+.demo .bypill svg{width:20px;height:20px;color:#d9892b}
+.demo .saved{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:14px 18px}
+.demo .saved .when{border-left:3px solid #7c6fe0;padding-left:14px}.demo .saved .when b{display:block;font-size:17px}.demo .saved .when span{color:var(--muted);font-size:14.5px}
+.chips2{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.chips2 span{background:var(--soft);border-radius:999px;padding:4px 14px;font-size:14.5px}
+.perks{display:flex;flex-wrap:wrap;margin-top:28px}
+.perk{display:flex;align-items:center;gap:12px;padding:0 26px;border-left:1px solid #cfcce0;color:#3a7d6b;font-size:16px;line-height:1.3}
+.perk:first-child{padding-left:0;border-left:0}
+.signin{background:var(--card);border:1px solid var(--line);border-radius:26px;padding:40px 34px 30px;text-align:center;box-shadow:0 14px 40px rgba(75,69,176,.10);margin-top:6px}
+.signin h2{font-size:34px;color:var(--ink);margin:0 0 6px;letter-spacing:-.02em;font-weight:700}
+.signin>p{margin:0 0 26px;color:#34325a;font-size:16.5px}
+.gbtn{display:block;border:1.5px solid #cfcce0;border-radius:14px;padding:14px 18px;font-size:18px;font-weight:600;color:var(--ink);text-decoration:none;background:var(--card)}
+.gbtn:hover{border-color:var(--brand);background:#fbfaff}
+.signin .new{margin:22px 0 10px;font-size:15.5px;color:var(--ink)}.signin .fine{margin:0;font-size:13.5px;color:var(--muted)}
+ol.hows{list-style:none;padding:0;margin:26px 0 8px}
+.how{display:flex;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:10px 0}
+.how .num{flex:none;width:34px;height:34px;border-radius:50%;background:var(--brand);color:#fff;font-weight:700;display:grid;place-items:center}
+.how h3{margin:3px 0 4px;font-size:17.5px}.how p{margin:0;color:#34325a}.how .say{margin:10px 0 0}
+body.homebg{background:radial-gradient(900px 500px at 78% -10%,#ebe8fb 0,transparent 60%),radial-gradient(700px 420px at -5% 105%,#ebe8fb 0,transparent 60%),var(--bg)}
+@media(max-width:900px){.home{grid-template-columns:1fr;gap:32px;padding-top:26px}.pitch h1{font-size:40px}.pitch .lead{font-size:18px}}
+@media(max-width:620px){.pitch h1{font-size:33px}.demo .saved{grid-template-columns:1fr}.perk{padding:8px 16px 8px 0;border-left:0}.signin{padding:30px 22px 24px}.signin h2{font-size:28px}}
 @media print{header.top,.noprint{display:none!important}body{background:#fff}.card{break-inside:avoid}}
 `;
 
-function page({ title, nav = '', body, head = '', wide = false }) {
+// KidLog's own mark: a heart with a pulse line.
+const LOGO = '<svg viewBox="0 0 32 32" width="30" height="30" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 27S4.5 20.3 4.5 12a6.2 6.2 0 0 1 11.5-3.2A6.2 6.2 0 0 1 27.5 12C27.5 20.3 16 27 16 27z" fill="#fff" stroke="#1f6f63" stroke-width="2.4"/><path d="M8 15.5h4l2-4 3.5 8 2-4H24" stroke="#e5533d" stroke-width="2.2"/></svg>';
+
+function page({ title, nav = '', body, head = '', wide = false, bodyClass = '' }) {
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -152,8 +183,8 @@ function page({ title, nav = '', body, head = '', wide = false }) {
 <title>${esc(title)}</title>
 <style>${CSS}</style>${head}
 <script>try{document.cookie='tz='+(-new Date().getTimezoneOffset())+';path=/;max-age=31536000;samesite=lax'}catch(e){}</script>
-</head><body>
-<header class="top"><div class="wrap${wide ? ' wide' : ''}"><a class="logo" href="/">Kid<span>Log</span></a>${nav}</div></header>
+</head><body${bodyClass ? ` class="${bodyClass}"` : ''}>
+<header class="top"><div class="wrap${wide ? ' wide' : ''}"><a class="logo" href="/">${LOGO}<b>Kid<span>Log</span></b></a>${nav}</div></header>
 <main class="wrap${wide ? ' wide' : ''}">${body}
 <footer>KidLog records what you tell it so you can show your doctor. It does not give medical advice. If you are worried about your child, contact your doctor.</footer>
 </main></body></html>`;
@@ -349,22 +380,74 @@ function board({ space, base, all, entries, children, child, flagged, range, rea
     </div>`;
 }
 
+// Top bar for the public pages: How it works, then Sign in (or back to the timeline when signed in).
+const publicNav = (user, on) => `<nav class="pub"><a href="/how-it-works"${on === 'how' ? ' class="on" aria-current="page"' : ''}>How it works</a>${user
+  ? '<a class="pill" href="/">My timeline</a>' : '<a class="pill" href="/auth/google">Sign in</a>'}</nav>`;
+
+const spark = '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M10 2l1.8 5.2L17 9l-5.2 1.8L10 16l-1.8-5.2L3 9l5.2-1.8zM18 14l.9 2.6 2.6.9-2.6.9L18 21l-.9-2.6-2.6-.9 2.6-.9z"/></svg>';
+const perk = (color, paths, a, b) => `<div class="perk"><svg viewBox="0 0 24 24" width="34" height="34" fill="${color}" aria-hidden="true">${paths}</svg><span>${a}<br>${b}</span></div>`;
+
 export function landing({ error } = {}) {
   return page({
-    title: 'KidLog: tell Claude, show your doctor',
-    body: `<section class="hero">
-      <h1>Tell Claude what happened. Show your doctor the timeline.</h1>
-      <p class="lead">At 2 AM you describe the night to Claude in your own words. KidLog keeps it as a clean, dated record you can correct and hand to the paediatrician.</p>
-      <p class="row"><a class="btn" href="/auth/google">Sign up with Google</a><a class="btn ghost" href="/auth/google">Sign in</a></p>
-      ${error ? `<div class="err">${esc(error)}</div>` : ''}
-      <p class="lead" style="margin-top:10px;font-size:14.5px">No password to remember. Only you, and a parent you invite, can open your family's timeline.</p>
-    </section>
-    <div class="grid3">
-      <div class="card"><b>1. Connect Claude</b>Paste one link into Claude's connector settings.</div>
-      <div class="card"><b>2. Just talk</b>"Aarav woke up coughing at 2:15, felt warm, refused his bottle."</div>
-      <div class="card"><b>3. Review and share</b>Fix anything in the app, then send the doctor a read-only link.</div>
-    </div>
-    <p class="note">KidLog has no AI inside. Your own Claude does the writing; KidLog only saves, shows and shares.</p>`,
+    title: 'KidLog: child health tracking, minus the forms',
+    nav: publicNav(null),
+    wide: true,
+    bodyClass: 'homebg',
+    body: `<div class="home">
+      <section class="pitch">
+        <h1>Child health tracking, <span class="hl">minus</span> the forms.</h1>
+        <p class="lead">Just tell Claude what happened in your own words. KidLog turns late-night fevers, doses and feeds into a clean, dated timeline ready for your paediatrician.</p>
+        <div class="demo" aria-label="Example: what you say, and what KidLog saves">
+          <div class="said">${spark}<span>"Gave Aarav 5 ml of paracetamol at 2:15 AM, temp was 101.4 F. He seems a bit fussy."</span></div>
+          <div class="by"><span class="down" aria-hidden="true">&darr;</span><span class="bypill">${spark}Organised by Claude</span></div>
+          <div class="saved">
+            <div class="when"><b>2:15 AM</b><span>15 Feb 2026</span></div>
+            <div><div class="meta"><span class="tag c-temperature">Temperature</span><span class="tag c-medicine">Medicine</span></div>
+              <div class="chips2"><span>101.4 F</span><span>Paracetamol, 5 ml</span><span>A bit fussy</span></div></div>
+          </div>
+        </div>
+        <div class="perks">
+          ${perk('#4f9b83', '<path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5z"/><path d="M8.5 12l2.5 2.5 4.5-5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>', 'Private to', 'your family')}
+          ${perk('#4f9b83', '<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>', 'Instant', 'organisation')}
+          ${perk('#4f9b83', '<path d="M12 21S3 15.5 3 9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6.5-9 12-9 12z"/>', 'Ready for', 'your doctor')}
+        </div>
+      </section>
+      <section class="signin" aria-labelledby="welcome">
+        <h2 id="welcome">Welcome back</h2>
+        <p>Sign in to view your child's health timeline.</p>
+        ${error ? `<div class="err">${esc(error)}</div>` : ''}
+        <a class="gbtn" href="/auth/google">Continue with Google</a>
+        <p class="new">New to KidLog? <a href="/auth/google">Create a free family account</a></p>
+        <p class="fine">No password to remember. Only you, and a parent you invite, can open your family's timeline.</p>
+      </section>
+    </div>`,
+  });
+}
+
+export function howItWorks({ user } = {}) {
+  const step = (n, title, text, say = '') => `<li class="how"><span class="num">${n}</span><div><h3>${title}</h3><p>${text}</p>${say ? `<div class="say">${say}</div>` : ''}</div></li>`;
+  return page({
+    title: 'How KidLog works',
+    nav: publicNav(user, 'how'),
+    body: `<h1>How KidLog works</h1>
+      <p class="lead">You talk to Claude the way you would tell a friend. KidLog keeps what you said as a dated health timeline for each child, which you can correct and share with the doctor.</p>
+      <ol class="hows">
+        ${step(1, 'Create your family timeline', 'Sign in with your Google account and give your family a name. There is no password to set or remember.')}
+        ${step(2, 'Connect Claude', 'KidLog gives you a private connection link. You paste it once into Claude\'s connector settings, on the web, desktop or phone. It takes about a minute, and the Connect Claude page walks you through it.')}
+        ${step(3, 'Tell Claude what happened', 'In a chat with KidLog switched on, describe it in your own words. Claude saves one dated entry per event: symptoms, temperatures, medicine doses, feeds, sleep, doctor visits and vaccines. A child is added the first time you mention them.', 'Aarav woke up coughing at 2:15 last night, felt a bit warm but no high fever. Refused his milk and settled around 3. Log this, I want to raise it with the doctor.')}
+        ${step(4, 'Check and correct the timeline', 'Each entry appears on the timeline within a few seconds. You can edit the time, wording or temperature of anything Claude wrote, add entries by hand, and flag the ones you want to raise with the doctor.')}
+        ${step(5, 'Keep appointments in view', 'Add upcoming doctor and vaccine appointments yourself or by telling Claude. The next one shows beside the timeline with how many days are left.', 'Aarav has a follow-up with the paediatrician on 28 January at 5 PM.')}
+        ${step(6, 'Invite the other parent', 'Create an invite link and send it to your partner or a family member. They sign in with their own Google account and see and add to the same timeline.')}
+        ${step(7, 'Share with your doctor', 'Create a read-only link for one child or all of them, with everything or only the flagged entries. The doctor opens it in any browser, can read and print it, and cannot change anything. You can turn a link off at any time.')}
+      </ol>
+      <h2>Good to know</h2>
+      <div class="card">
+        <p style="margin-top:0"><b>KidLog has no AI inside.</b> Your own Claude does the reading and writing. KidLog only saves, shows and shares what you told it.</p>
+        <p><b>It does not give medical advice.</b> KidLog does not diagnose, rate urgency or suggest treatment. If you are worried about your child, contact your doctor.</p>
+        <p><b>Who can see your timeline.</b> Only the Google accounts on your Parents page can open it. Doctors see only the read-only links you create.</p>
+        <p style="margin-bottom:0"><b>What you need.</b> A Google account, and a Claude account on a plan that allows custom connectors.</p>
+      </div>
+      <p class="row" style="margin-top:22px">${user ? '<a class="btn" href="/">Go to my timeline</a>' : '<a class="btn" href="/auth/google">Continue with Google</a><a class="btn ghost" href="/">Back to the home page</a>'}</p>`,
   });
 }
 
