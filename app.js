@@ -66,6 +66,8 @@ app.get('/', wrap(async (req, res) => {
   res.redirect(303, space ? `/f/${space.key}` : '/signup');
 }));
 
+app.get('/how-it-works', (req, res) => res.send(views.howItWorks({ user: req.user })));
+
 // ---- Sign-up: a signed-in parent names their family ----
 app.get('/signup', wrap(async (req, res) => {
   if (!req.user) return res.redirect(303, '/');
