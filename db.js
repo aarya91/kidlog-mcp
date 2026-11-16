@@ -54,6 +54,24 @@ export function init() {
         expires_at TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS oauth_clients (
+        client_id TEXT PRIMARY KEY,
+        info JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS oauth_grants (
+        token_hash TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        redirect_uri TEXT,
+        code_challenge TEXT,
+        state TEXT,
+        resource TEXT,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS oauth_grants_user_idx ON oauth_grants(user_id, kind);
       CREATE TABLE IF NOT EXISTS entries (
         id SERIAL PRIMARY KEY,
         space_id INTEGER NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
@@ -244,10 +262,72 @@ export async function acceptInvite(t, userId) {
   return spaceByUser(userId);
 }
 
-// Replaces the family key, which switches off the old Claude connection link.
-export async function rotateKey(spaceId) {
-  const r = await pool.query('UPDATE spaces SET key = $1 WHERE id = $2 RETURNING *', [token(18), spaceId]);
+// ---- Claude connector sign-in (OAuth) ----
+// Apps that have registered to connect (Claude registers itself automatically).
+export async function oauthGetClient(id) {
+  await init();
+  const r = await pool.query('SELECT info FROM oauth_clients WHERE client_id = $1', [String(id)]);
+  return r.rows[0]?.info;
+}
+
+export async function oauthSaveClient(client) {
+  await init();
+  // Registrations that were never used to connect anyone are cleared out after a month.
+  await pool.query(`DELETE FROM oauth_clients c WHERE c.created_at < now() - interval '30 days'
+                    AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = c.client_id)`);
+  await pool.query('INSERT INTO oauth_clients (client_id, info) VALUES ($1, $2)', [client.client_id, JSON.stringify(client)]);
+  return client;
+}
+
+// One table holds every short-lived secret of the connection: the approval page in progress ('pending'),
+// the one-time code ('code'), and the access and refresh tokens. Only hashes are stored.
+export async function oauthCreateGrant({ kind, clientId, userId, redirectUri = null, codeChallenge = null, state = null, resource = null, seconds }) {
+  await init();
+  const t = token(32);
+  await pool.query('DELETE FROM oauth_grants WHERE expires_at < now()');
+  await pool.query(
+    `INSERT INTO oauth_grants (token_hash, kind, client_id, user_id, redirect_uri, code_challenge, state, resource, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now() + make_interval(secs => $9))`,
+    [hash(t), kind, clientId, userId, redirectUri, codeChallenge, state, resource, seconds]
+  );
+  return t;
+}
+
+export async function oauthGetGrant(t, kind) {
+  await init();
+  const r = await pool.query('SELECT * FROM oauth_grants WHERE token_hash = $1 AND kind = $2 AND expires_at > now()', [hash(t), kind]);
   return r.rows[0];
+}
+
+// Reads and removes in one step, so an approval page or a code can be used only once.
+export async function oauthTakeGrant(t, kind) {
+  await init();
+  const r = await pool.query('DELETE FROM oauth_grants WHERE token_hash = $1 AND kind = $2 AND expires_at > now() RETURNING *', [hash(t), kind]);
+  return r.rows[0];
+}
+
+export async function oauthExpireSoon(t, seconds) {
+  await pool.query('UPDATE oauth_grants SET expires_at = least(expires_at, now() + make_interval(secs => $2)) WHERE token_hash = $1', [hash(t), seconds]);
+}
+
+export async function oauthDeleteGrant(t, clientId) {
+  await init();
+  await pool.query('DELETE FROM oauth_grants WHERE token_hash = $1 AND client_id = $2', [hash(t), clientId]);
+}
+
+// Whether this parent has a live Claude connection, and since when.
+export async function oauthConnection(userId) {
+  const r = await pool.query(
+    `SELECT count(*)::int AS n, min(created_at) AS since FROM oauth_grants
+     WHERE user_id = $1 AND kind = 'refresh' AND expires_at > now() + interval '5 minutes'`,
+    [userId]
+  );
+  return r.rows[0].n ? { since: r.rows[0].since } : null;
+}
+
+// Signs this parent's Claude out of KidLog straight away.
+export async function oauthDisconnect(userId) {
+  await pool.query('DELETE FROM oauth_grants WHERE user_id = $1', [userId]);
 }
 
 export async function spaceByKey(key) {

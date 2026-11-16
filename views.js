@@ -71,6 +71,9 @@ ol.steps{padding-left:22px}ol.steps li{margin:8px 0}
 .empty{text-align:center;padding:36px 20px;color:var(--muted)}
 .say{background:#fbfaff;border:1px dashed #cfcce0;border-radius:10px;padding:10px 14px;margin:8px 0;font-style:italic}
 footer{color:var(--muted);font-size:13.5px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+footer .flinks{display:block;margin-top:8px}footer a{color:var(--muted)}
+.policy h2{font-size:18px;color:var(--ink);margin:30px 0 8px}.policy p,.policy li{color:#34325a}.policy ul{padding-left:22px}.policy li{margin:5px 0}
+.allow{list-style:none;padding:0;margin:8px 0 0}.allow li{padding:5px 0 5px 26px;position:relative}.allow li::before{content:'';position:absolute;left:4px;top:13px;width:8px;height:8px;border-radius:50%;background:var(--brand)}.allow.no li::before{background:#b9b7c9}
 @media(max-width:620px){.two{grid-template-columns:1fr}nav{margin-left:0}}
 .wrap.wide{max-width:1120px}
 .profile{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:28px 0 8px}
@@ -186,7 +189,8 @@ function page({ title, nav = '', body, head = '', wide = false, bodyClass = '' }
 </head><body${bodyClass ? ` class="${bodyClass}"` : ''}>
 <header class="top"><div class="wrap${wide ? ' wide' : ''}"><a class="logo" href="/">${LOGO}<b>Kid<span>Log</span></b></a>${nav}</div></header>
 <main class="wrap${wide ? ' wide' : ''}">${body}
-<footer>KidLog records what you tell it so you can show your doctor. It does not give medical advice. If you are worried about your child, contact your doctor.</footer>
+<footer>KidLog records what you tell it so you can show your doctor. It does not give medical advice. If you are worried about your child, contact your doctor.
+<span class="flinks noprint"><a href="/how-it-works">How it works</a> · <a href="/privacy">Privacy</a></span></footer>
 </main></body></html>`;
 }
 
@@ -196,6 +200,7 @@ function spaceNav(space, on) {
   return `<nav>${a(b, 'timeline', 'Timeline')}${a(b + '/kids', 'kids', 'Children')}${a(b + '/parents', 'parents', 'Parents')}${a(b + '/connect', 'connect', 'Connect Claude')}${a(b + '/share', 'share', 'Share with doctor')}</nav><form method="post" action="/logout" class="noprint" style="margin:0"><button class="btn ghost small">Sign out</button></form>`;
 }
 
+const clean = (v) => String(v ?? '').trim().slice(0, 60);
 const initial = (name) => esc(String(name).trim().charAt(0).toUpperCase() || '?');
 
 const ICON = {
@@ -433,7 +438,7 @@ export function howItWorks({ user } = {}) {
       <p class="lead">You talk to Claude the way you would tell a friend. KidLog keeps what you said as a dated health timeline for each child, which you can correct and share with the doctor.</p>
       <ol class="hows">
         ${step(1, 'Create your family timeline', 'Sign in with your Google account and give your family a name. There is no password to set or remember.')}
-        ${step(2, 'Connect Claude', 'KidLog gives you a private connection link. You paste it once into Claude\'s connector settings, on the web, desktop or phone. It takes about a minute, and the Connect Claude page walks you through it.')}
+        ${step(2, 'Connect Claude', 'Add KidLog to your connectors in Claude, on the web, desktop or phone. Claude opens a KidLog page where you sign in with Google and allow the connection. It takes about a minute, and there is nothing to copy or paste.')}
         ${step(3, 'Tell Claude what happened', 'In a chat with KidLog switched on, describe it in your own words. Claude saves one dated entry per event: symptoms, temperatures, medicine doses, feeds, sleep, doctor visits and vaccines. A child is added the first time you mention them.', 'Aarav woke up coughing at 2:15 last night, felt a bit warm but no high fever. Refused his milk and settled around 3. Log this, I want to raise it with the doctor.')}
         ${step(4, 'Check and correct the timeline', 'Each entry appears on the timeline within a few seconds. You can edit the time, wording or temperature of anything Claude wrote, add entries by hand, and flag the ones you want to raise with the doctor.')}
         ${step(5, 'Keep appointments in view', 'Add upcoming doctor and vaccine appointments yourself or by telling Claude. The next one shows beside the timeline with how many days are left.', 'Aarav has a follow-up with the paediatrician on 28 January at 5 PM.')}
@@ -444,8 +449,8 @@ export function howItWorks({ user } = {}) {
       <div class="card">
         <p style="margin-top:0"><b>KidLog has no AI inside.</b> Your own Claude does the reading and writing. KidLog only saves, shows and shares what you told it.</p>
         <p><b>It does not give medical advice.</b> KidLog does not diagnose, rate urgency or suggest treatment. If you are worried about your child, contact your doctor.</p>
-        <p><b>Who can see your timeline.</b> Only the Google accounts on your Parents page can open it. Doctors see only the read-only links you create.</p>
-        <p style="margin-bottom:0"><b>What you need.</b> A Google account, and a Claude account on a plan that allows custom connectors.</p>
+        <p><b>Who can see your timeline.</b> Only the Google accounts on your Parents page can open it. Doctors see only the read-only links you create. The <a href="/privacy">privacy policy</a> says what KidLog stores.</p>
+        <p style="margin-bottom:0"><b>What you need.</b> A Google account and a Claude account.</p>
       </div>
       <p class="row" style="margin-top:22px">${user ? '<a class="btn" href="/">Go to my timeline</a>' : '<a class="btn" href="/auth/google">Continue with Google</a><a class="btn ghost" href="/">Back to the home page</a>'}</p>`,
   });
@@ -522,7 +527,7 @@ export function parents({ space, members, invite, base, me, isOwner }) {
       ${members.map(row).join('')}
       <h2>Invite another parent</h2>
       <div class="card">${inviteBox}</div>
-      <p class="note" style="margin-top:18px">Removing a parent stops their sign-in from opening this family. If they also had the Claude connection link, replace it on the <a href="${b}/connect">Connect Claude</a> page.</p>`,
+      <p class="note" style="margin-top:18px">Removing a parent stops their sign-in from opening this family, and their Claude can no longer read or add to it.</p>`,
   });
 }
 
@@ -580,30 +585,129 @@ export function entryForm({ space, entry, error, isNew, children }) {
 const copyBox = (id, value) => `<div class="copy"><input id="${id}" type="text" readonly value="${esc(value)}" aria-label="Link" onfocus="this.select()">
   <button type="button" class="btn" onclick="var i=document.getElementById('${id}');navigator.clipboard.writeText(i.value).then(()=>{this.textContent='Copied'})">Copy</button></div>`;
 
-export function connect({ space, mcpUrl, replaced }) {
+export function connect({ space, mcpUrl, connection, disconnected }) {
+  const b = `/f/${esc(space.key)}`;
+  const status = connection
+    ? `<div class="card ok"><b>Claude is connected to your account</b><p style="margin:4px 0 12px">Connected since ${dateOnly(connection.since)}. Claude can read and add to ${esc(space.name)}'s timeline when you ask it to.</p>
+        <form method="post" action="${b}/connect/disconnect" style="margin:0" onsubmit="return window.confirm('Disconnect Claude? It will no longer be able to read or add to your timeline until you connect it again.')"><button class="btn danger small">Disconnect Claude</button></form></div>`
+    : disconnected
+      ? '<p class="note">Claude is disconnected. It can no longer read or add to your timeline. To finish, remove KidLog from your connectors in Claude, or connect again from there.</p>'
+      : '';
   return page({
     title: 'Connect Claude · KidLog',
     nav: spaceNav(space, 'connect'),
     body: `<h1>Connect Claude</h1>
-      <p class="lead">One-time setup, about a minute. It works in Claude on the web, desktop and phone.</p>
-      ${replaced ? '<p class="note">Your connection link has been replaced. The old one no longer works: remove the KidLog connector in Claude and add it again with the new link below.</p>' : ''}
-      <h2>Your KidLog connection link</h2>
+      <p class="lead">One-time setup, about a minute. It works in Claude on the web, desktop and phone. Each parent connects their own Claude.</p>
+      ${status}
+      <h2>KidLog's connector address</h2>
       ${copyBox('mcp', mcpUrl)}
-      <p style="font-size:14.5px;color:var(--muted)">Treat this link like a password. Anyone who has it can add to and read this timeline.</p>
-      <form method="post" action="/f/${esc(space.key)}/connect/rotate" style="margin:0" onsubmit="return window.confirm('Replace the connection link? The current one stops working and you will need to add KidLog to Claude again.')"><button class="btn danger small">Replace this link</button></form>
+      <p style="font-size:14.5px;color:var(--muted)">This address is the same for everyone and is safe to share. Claude gets access only after you sign in and allow it.</p>
       <h2>Steps</h2>
       <ol class="steps">
         <li>Open <a href="https://claude.ai/customize/connectors" target="_blank" rel="noopener">Claude</a> and go to <b>Customize &gt; Connectors</b>.</li>
         <li>Click <b>Add</b>, then <b>Add custom connector</b> (on some plans: <b>Custom &gt; Web</b>).</li>
-        <li>Name it <b>KidLog</b>, paste the link above as the server URL, and continue.</li>
-        <li>If asked about authentication, choose <b>No sign in</b>, then click <b>Add</b>.</li>
+        <li>Name it <b>KidLog</b>, paste the address above as the server URL, and click <b>Add</b>.</li>
+        <li>Click <b>Connect</b>. A KidLog page opens: sign in with Google if asked, then click <b>Allow</b>.</li>
         <li>In a new chat, make sure KidLog is switched on under the <b>+</b> menu &gt; <b>Connectors</b>.</li>
       </ol>
       <h2>Then try saying</h2>
       <div class="say">Aarav woke up coughing at 2:15 AM, felt a bit warm but no high fever. Refused his bottle, settled around 3. Log this for the doctor.</div>
       <div class="say">Gave Aarav 5 ml paracetamol at 8 this morning. Temperature was 100.2 F before.</div>
       <div class="say">Summarise Aarav's last two weeks for our doctor visit.</div>
-      <p><a class="btn ghost" href="/f/${esc(space.key)}">Back to the timeline</a></p>`,
+      <p><a class="btn ghost" href="${b}">Back to the timeline</a></p>`,
+  });
+}
+
+// The approval page Claude sends a parent to when they connect KidLog.
+export function consent({ space, user, id, clientName, redirectHost }) {
+  const app = clean(clientName) || 'Claude';
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(redirectHost);
+  return page({
+    title: 'Connect Claude to KidLog',
+    body: `<h1>Allow ${esc(app)} to use your KidLog timeline?</h1>
+      <p class="lead">You are signed in as ${esc(user.email)}. This connects ${esc(app)} to the family "${esc(space.name)}".</p>
+      <div class="card">
+        <b>It will be able to</b>
+        <ul class="allow"><li>Read your entries, children and appointments</li><li>Add new entries and appointments, and add a child</li><li>Correct an entry or set a birth date when you ask it to</li></ul>
+        <b style="display:block;margin-top:14px">It will not be able to</b>
+        <ul class="allow no"><li>Delete entries or appointments</li><li>Invite or remove parents</li><li>Create or turn off doctor links</li></ul>
+      </div>
+      <p style="font-size:14.5px;color:var(--muted)">After you choose, you will be sent back to <b>${esc(redirectHost)}</b>.${local ? ' That is an app running on this computer. Continue only if you started this from Claude on this computer.' : ''} You can disconnect at any time on the Connect Claude page.</p>
+      <form method="post" action="/oauth/consent" class="row" style="margin-top:18px">
+        <input type="hidden" name="id" value="${esc(id)}">
+        <button class="btn" name="action" value="allow">Allow</button>
+        <button class="btn ghost" name="action" value="deny">Cancel</button>
+      </form>
+      <form method="post" action="/logout" style="margin-top:22px"><button class="btn ghost small">Not ${esc(user.email)}? Sign out</button></form>`,
+  });
+}
+
+export function privacy({ user, supportEmail }) {
+  const contact = supportEmail
+    ? `<a href="mailto:${esc(supportEmail)}">${esc(supportEmail)}</a>`
+    : 'the contact address published on this page (not yet set)';
+  return page({
+    title: 'Privacy policy · KidLog',
+    nav: publicNav(user),
+    body: `<div class="policy"><h1>Privacy policy</h1>
+      <p class="lead">Last updated 16 November 2026. This page says what KidLog stores, why, who else is involved, and how to have it removed.</p>
+
+      <h2>Who this covers</h2>
+      <p>KidLog is a service for parents and guardians. It is not meant to be used by children. You decide what you record about your child, and you are responsible for having the right to record and share it.</p>
+
+      <h2>What KidLog stores</h2>
+      <ul>
+        <li><b>Your account:</b> the name, email address and account identifier that Google gives us when you sign in. We never receive or store your Google password.</li>
+        <li><b>Your family:</b> the family name you choose and which accounts are its parents.</li>
+        <li><b>Your children:</b> the first name you enter for each child and, if you give it, their birth date.</li>
+        <li><b>Health entries:</b> what you or your Claude save to the timeline: date and time, type, a summary, details, a temperature if given, and whether you flagged it for the doctor.</li>
+        <li><b>Appointments:</b> the doctor and vaccine appointments you add, with their notes.</li>
+        <li><b>Links you create:</b> doctor share links and parent invite links.</li>
+        <li><b>Sign-in records:</b> a record that your browser is signed in, and a record that your Claude is connected. These are stored in scrambled form (hashes), not as usable keys.</li>
+      </ul>
+      <p>KidLog uses two cookies: one that keeps you signed in, and one that remembers your time zone so dates show correctly. It has no advertising or analytics trackers.</p>
+
+      <h2>What KidLog does not collect</h2>
+      <p>KidLog does not read your Claude conversations. It receives only the specific entries, appointments and requests that Claude sends through the KidLog connector. It does not collect your location, contacts or payment details.</p>
+
+      <h2>How your information is used</h2>
+      <p>Only to run the service: to show your timeline to you and the parents you invite, to show a read-only view to someone you give a doctor link to, and to let your Claude read and add entries when you ask it to. We do not sell your information, use it for advertising, or use it to train AI models.</p>
+
+      <h2>Who can see it</h2>
+      <ul>
+        <li>The Google accounts listed on your Parents page.</li>
+        <li>Anyone who has a doctor share link you created, for as long as that link is turned on. They can read what the link covers and cannot change anything.</li>
+        <li>Your own Claude, once you connect it and allow access.</li>
+      </ul>
+
+      <h2>Other companies involved</h2>
+      <ul>
+        <li><b>Google</b> handles sign-in and tells us your name and email address.</li>
+        <li><b>Vercel</b> hosts the KidLog website, and <b>Neon</b> hosts the database where your information is kept. Their technical logs may record your IP address and the pages requested.</li>
+        <li><b>Anthropic</b> provides Claude. What you say to Claude, and what Claude reads from KidLog on your behalf, is handled under Anthropic's own terms and privacy policy for your Claude account. KidLog does not control that.</li>
+      </ul>
+      <p>We share your information with no one else, unless the law requires it.</p>
+
+      <h2>How long it is kept</h2>
+      <ul>
+        <li>Entries, appointments, children and your family stay until you delete them or ask us to.</li>
+        <li>A browser sign-in lasts up to 30 days. An unused invite link expires after 7 days.</li>
+        <li>A Claude connection that is not used for 90 days expires. You can end it sooner on the Connect Claude page.</li>
+      </ul>
+
+      <h2>Your choices</h2>
+      <ul>
+        <li>Edit or delete any entry or appointment in the app at any time.</li>
+        <li>Turn off a doctor link, cancel an invite, remove a parent, or disconnect Claude at any time.</li>
+        <li>To get a copy of your information, or to have your account and your family's information deleted, write to ${contact}. We will act on it within 30 days.</li>
+      </ul>
+
+      <h2>Security</h2>
+      <p>All connections to KidLog are encrypted in transit (HTTPS). Your timeline opens only for signed-in parents of your family. No system is perfectly secure, so please do not record anything you would not want stored online.</p>
+
+      <h2>Changes and contact</h2>
+      <p>If this policy changes in a way that matters, we will update the date above and say so on the KidLog home page. Questions and requests: ${contact}.</p>
+    </div>`,
   });
 }
 

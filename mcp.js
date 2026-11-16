@@ -1,20 +1,21 @@
 // The Claude connection (MCP). Claude does the thinking; these tools only save and read rows.
+// Requests arrive already signed in: oauth.js has checked the token and put the parent's id on req.auth.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import * as db from './db.js';
 
-const INSTRUCTIONS = `KidLog keeps a parent's notes about their child's health as a timeline they can show a doctor.
-You (the assistant) turn what the parent says into tidy entries; KidLog saves them and the parent can edit them later.
+const INSTRUCTIONS = `KidLog keeps a parent's notes about their child's health as a dated timeline they can show a doctor.
+These tools save and read that timeline for the signed-in parent's family. The parent can edit every entry later in the KidLog web app.
 
-Rules for writing entries:
-- Record only what the parent actually said. Keep their facts and plain wording. Do not add symptoms, clinical terms, causes or severity they did not state.
-- Do not diagnose or rate urgency. If something sounds worrying, tell the parent in the chat to contact their doctor; do not write that judgement into the entry.
-- If one message covers several distinct events (a fever, a medicine dose, a missed feed), save one entry per event.
-- A child is added automatically the first time you log an event for them. Use save_child_profile when the parent tells you a birth date.
-- When the parent mentions a future doctor or vaccine appointment, save it with add_appointment (not log_event, which is for things that already happened).
-- Use the parent's local date and time. If they give no date, use today's date; if they give no time, use the current time.
-- After saving, tell the parent briefly what was saved and give them the timeline link.`;
+How entries are written:
+- An entry records only what the parent actually said, in their facts and plain wording, without added symptoms, clinical terms, causes or severity.
+- Entries do not hold diagnoses or urgency ratings. KidLog is a record, not medical advice.
+- One entry holds one event. A message that covers several events (a fever, a medicine dose, a missed feed) becomes one entry per event.
+- A child is added automatically the first time an event is logged for them. save_child_profile sets a birth date the parent has stated.
+- Future doctor or vaccine appointments go in add_appointment. log_event is for things that already happened.
+- Dates and times are the parent's local date and time. With no date given, today's date applies; with no time given, the current time.
+- Each save returns a timeline_url where the parent can review the entry.`;
 
 const when = z.string().describe("Local date and time of the event, formatted YYYY-MM-DDTHH:MM (24-hour), e.g. 2026-11-10T02:15");
 const category = z.enum(db.CATEGORIES).describe('symptom, temperature, medicine, feeding, sleep, doctor_visit, vaccine, or note');
@@ -41,8 +42,8 @@ function buildServer(space, baseUrl) {
   server.registerTool('log_event', {
     title: 'Log a health event',
     description:
-      "Save one event to a child's health timeline. Use the parent's own facts and wording, organised clearly. " +
-      'Never add details, clinical language or severity the parent did not state.',
+      "Saves one event to a child's health timeline, in the parent's own facts and wording. " +
+      'It adds a new entry and never changes existing ones.',
     inputSchema: {
       child_name: z.string().describe("The child's first name"),
       occurred_at: when,
@@ -66,8 +67,8 @@ function buildServer(space, baseUrl) {
   server.registerTool('get_timeline', {
     title: 'Read the timeline',
     description:
-      "Read saved entries, newest first. Use this to answer questions about the child's history or to prepare a summary for a doctor visit. " +
-      'Entries may have been edited by the parent in the app; treat the saved text as the source of truth.',
+      "Reads saved entries, newest first, optionally for one child, a date range, or only entries flagged for the doctor. " +
+      'Entries may have been edited by the parent in the app; the saved text is the current record.',
     inputSchema: {
       child_name: z.string().optional().describe('Only this child'),
       from: z.string().optional().describe('Start date, YYYY-MM-DD'),
@@ -87,7 +88,7 @@ function buildServer(space, baseUrl) {
 
   server.registerTool('update_event', {
     title: 'Correct an entry',
-    description: 'Change fields of an existing entry when the parent corrects or adds to it. Only send the fields that change.',
+    description: 'Changes fields of one existing entry, replacing their saved values. Fields that are not sent stay as they are.',
     inputSchema: {
       id: z.number().int().describe('Entry id from log_event or get_timeline'),
       child_name: z.string().optional(),
@@ -98,7 +99,7 @@ function buildServer(space, baseUrl) {
       temperature: z.string().optional(),
       flag_for_doctor: z.boolean().optional(),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, async (a) => {
     const v = db.validateEntry({
       child: a.child_name, occurred_at: a.occurred_at, category: a.category, title: a.title,
@@ -116,7 +117,7 @@ function buildServer(space, baseUrl) {
 
   server.registerTool('list_children', {
     title: 'List children',
-    description: 'List the children in this family with birth date, age and how many entries each has. Use it to match a name the parent mentions.',
+    description: 'Lists the children in this family with birth date, age and how many entries each has.',
     inputSchema: {},
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, async () => ok({ children: await kids(), timeline_url: timelineUrl }));
@@ -124,12 +125,12 @@ function buildServer(space, baseUrl) {
   server.registerTool('save_child_profile', {
     title: 'Add a child or set a birth date',
     description:
-      "Add a child to the family, or set the birth date of an existing child. Only use a birth date the parent actually gave; never guess one from an age.",
+      "Adds a child to the family, or sets the birth date of an existing child, replacing any saved one. The birth date is one the parent stated, not one worked out from an age.",
     inputSchema: {
       child_name: z.string().describe("The child's first name"),
       birth_date: z.string().optional().describe('Birth date as YYYY-MM-DD, only if the parent stated it'),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, async (a) => {
     const dob = a.birth_date === undefined ? { value: undefined } : db.validateDob(a.birth_date);
     if (dob.error) return fail(dob.error);
@@ -143,8 +144,8 @@ function buildServer(space, baseUrl) {
   server.registerTool('add_appointment', {
     title: 'Add an upcoming appointment',
     description:
-      'Save a future doctor or vaccine appointment for a child. Use only the date, time and details the parent gave. ' +
-      'For something that already happened, use log_event instead.',
+      'Saves a future doctor or vaccine appointment for a child, with the date, time and details the parent gave. ' +
+      'It adds a new appointment and never changes existing ones. Things that already happened belong in log_event.',
     inputSchema: {
       child_name: z.string().describe("The child's first name"),
       type: z.enum(db.APPOINTMENT_KINDS).describe('doctor or vaccine'),
@@ -162,7 +163,7 @@ function buildServer(space, baseUrl) {
 
   server.registerTool('list_appointments', {
     title: 'List appointments',
-    description: 'List saved doctor and vaccine appointments, soonest first. By default only those from today onwards.',
+    description: 'Lists saved doctor and vaccine appointments, soonest first. By default only those from today onwards.',
     inputSchema: {
       child_name: z.string().optional().describe('Only this child'),
       include_past: z.boolean().optional().describe('Also include appointments that have already passed'),
@@ -189,12 +190,12 @@ export async function handleMcp(req, res, baseUrl) {
   }
   let space;
   try {
-    space = await db.spaceByKey(req.params.key);
+    space = await db.spaceByUser(req.auth.extra.userId); // the token says which parent this is
   } catch (e) {
     console.error(e);
     return rpcError(res, 500, 'Storage is unavailable.');
   }
-  if (!space) return rpcError(res, 404, 'Unknown KidLog link. Copy the link again from your Connect Claude page.');
+  if (!space) return rpcError(res, 403, 'This Google account is not in a KidLog family. Open KidLog, create or join a family, then try again.');
 
   const server = buildServer(space, baseUrl);
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

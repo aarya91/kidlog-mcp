@@ -4,6 +4,7 @@ import * as db from './db.js';
 import * as views from './views.js';
 import { handleMcp } from './mcp.js';
 import * as auth from './auth.js';
+import * as oauth from './oauth.js';
 
 const app = express();
 app.set('trust proxy', true);
@@ -13,6 +14,8 @@ app.use(express.urlencoded({ extended: false, limit: '200kb' }));
 app.use((req, res, next) => {
   res.set('Referrer-Policy', 'no-referrer'); // private links must not leak to other sites
   res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Security-Policy', "frame-ancestors 'none'"); // no other site may embed these pages
+  res.set('X-Frame-Options', 'DENY');
   res.set('Cache-Control', 'no-store');
   next();
 });
@@ -47,9 +50,6 @@ async function boardData(spaceId, query, lock = {}) {
   return { all, entries, children, child, flagged, range };
 }
 
-// ---- Claude connection (MCP) ----
-app.all('/mcp/:key', (req, res) => handleMcp(req, res, baseUrl(req)));
-
 app.get('/healthz', wrap(async (req, res) => { await db.init(); res.send('ok'); }));
 
 // ---- Sign-in ----
@@ -58,6 +58,19 @@ app.use(wrap(auth.loadUser)); // sets req.user for every page below
 app.get('/auth/google', (req, res) => auth.googleStart(req, res, baseUrl(req)));
 app.get('/auth/google/callback', wrap((req, res) => auth.googleCallback(req, res, baseUrl(req))));
 app.post('/logout', wrap(auth.logout));
+
+// ---- Claude connection (MCP) ----
+// One address for everyone. Claude signs the parent in through the OAuth pages below and sends a token with each request.
+app.use(oauth.router(baseUrl)); // discovery documents, /register, /authorize, /token, /revoke
+app.post('/oauth/consent', wrap(oauth.consent));
+app.all('/mcp', oauth.requireToken(baseUrl), (req, res) => handleMcp(req, res, baseUrl(req)));
+// The per-family links from before sign-in existed no longer work.
+app.all('/mcp/:key', (req, res) => res.status(410).json({
+  jsonrpc: '2.0', id: null,
+  error: { code: -32000, message: `This connection link has been retired. In Claude, remove KidLog and add ${oauth.mcpUrl(baseUrl(req))} instead, then sign in.` },
+}));
+
+app.get('/privacy', (req, res) => res.send(views.privacy({ user: req.user, supportEmail: process.env.SUPPORT_EMAIL || '' })));
 
 // ---- Public pages ----
 app.get('/', wrap(async (req, res) => {
@@ -81,6 +94,8 @@ app.post('/signup', wrap(async (req, res) => {
   const existing = await db.spaceByUser(req.user.id);
   if (existing) return res.redirect(303, `/f/${existing.key}`);
   const space = await db.createSpace(req.body?.name, req.user.id);
+  const next = auth.nextUrl(req); // signed up on the way to connecting Claude: finish that first
+  if (next) { auth.clearNext(req, res); return res.redirect(303, next); }
   res.redirect(303, `/f/${space.key}?welcome=1`);
 }));
 
@@ -121,13 +136,13 @@ app.get('/f/:key', withSpace, wrap(async (req, res) => {
 
 app.get('/f/:key/stamp', withSpace, wrap(async (req, res) => res.type('text').send(await db.stamp(req.space.id))));
 
-app.get('/f/:key/connect', withSpace, (req, res) =>
-  res.send(views.connect({ space: req.space, mcpUrl: `${baseUrl(req)}/mcp/${req.space.key}`, replaced: req.query.replaced === '1' })));
+app.get('/f/:key/connect', withSpace, wrap(async (req, res) =>
+  res.send(views.connect({ space: req.space, mcpUrl: oauth.mcpUrl(baseUrl(req)), connection: await db.oauthConnection(req.user.id), disconnected: req.query.disconnected === '1' }))));
 
-// Replace the family key. The old Claude connection link stops working straight away.
-app.post('/f/:key/connect/rotate', withSpace, wrap(async (req, res) => {
-  const space = await db.rotateKey(req.space.id);
-  res.redirect(303, `/f/${space.key}/connect?replaced=1`);
+// Signs this parent's Claude out of KidLog. Other parents' connections are not touched.
+app.post('/f/:key/connect/disconnect', withSpace, wrap(async (req, res) => {
+  await db.oauthDisconnect(req.user.id);
+  res.redirect(303, `/f/${req.space.key}/connect?disconnected=1`);
 }));
 
 // ---- Parents: who can open this family, and the invite link ----
