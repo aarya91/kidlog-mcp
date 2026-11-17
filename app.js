@@ -9,13 +9,15 @@ import * as oauth from './oauth.js';
 import * as mail from './mail.js';
 import { SCHEDULES, SCHEDULE_IDS, childSchedule, nextVisit, calendarFile } from './vaccines.js';
 import { recordDoses, sendReminders } from './vaccine-jobs.js';
+import * as pay from './razorpay.js';
 
 const app = express();
 app.set('trust proxy', true);
 app.disable('x-powered-by');
 // Logo and icons. On Vercel the public/ folder is served by the platform itself; this line covers other hosts.
 app.use(express.static(fileURLToPath(new URL('./public', import.meta.url)), { maxAge: '1d', index: false }));
-app.use(express.json({ limit: '200kb' }));
+// Razorpay signs the exact bytes of its webhook request, so keep them for that one address.
+app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { if (req.originalUrl === '/razorpay/webhook') req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: false, limit: '200kb' }));
 app.use((req, res, next) => {
   res.set('Referrer-Policy', 'no-referrer'); // private links must not leak to other sites
@@ -39,21 +41,36 @@ function localNow(req) {
 const RANGE_DAYS = { 7: 7, 30: 30, 90: 90 };
 // Loads everything for the board, then narrows by period and flag in memory.
 // lock = { child, flaggedOnly } pins a doctor share link to its scope, whatever the query says.
-async function boardData(spaceId, query, lock = {}) {
+// On the Free plan, records older than 90 days leave the lists: days 91 to 100 come back as `locked`
+// (shown as locked cards to parents), and anything older is only counted in `hiddenCount`.
+async function boardData(space, query, lock = {}) {
+  const spaceId = space.id;
   const child = lock.child || db.clean(query.child, 60);
   const flagged = lock.flaggedOnly || query.flagged === '1';
   const range = RANGE_DAYS[query.range] ? String(query.range) : 'all';
   let [all, children] = await Promise.all([db.listEntries(spaceId, { child }), db.listChildren(spaceId)]);
   if (lock.child) children = children.filter((c) => c.child.toLowerCase() === lock.child.toLowerCase());
   if (lock.flaggedOnly) all = all.filter((e) => e.flagged);
+  const premium = db.isPremium(space);
+  let locked = [];
+  let hiddenCount = 0;
+  let olderTypes = []; // entry types that exist only beyond the 90 days, so the summary can say so instead of "None logged"
+  if (!premium) {
+    const view = db.historyCutoff(db.FREE.viewDays);
+    const store = db.historyCutoff(db.FREE.storeDays);
+    locked = all.filter((e) => e.occurred_at < view && e.occurred_at >= store);
+    hiddenCount = all.filter((e) => e.occurred_at < store).length;
+    olderTypes = [...new Set(all.filter((e) => e.occurred_at < view).map((e) => e.category))];
+    all = all.filter((e) => e.occurred_at >= view);
+  }
   let entries = all;
   if (range !== 'all') {
     // One spare day so "today" in any timezone is always included.
     const cutoff = new Date(Date.now() - (RANGE_DAYS[range] + 1) * 86400000).toISOString().slice(0, 16);
     entries = entries.filter((e) => e.occurred_at >= cutoff);
   }
-  if (flagged) entries = entries.filter((e) => e.flagged);
-  return { all, entries, children, child, flagged, range };
+  if (flagged) { entries = entries.filter((e) => e.flagged); locked = locked.filter((e) => e.flagged); }
+  return { all, entries, children, child, flagged, range, premium, locked, hiddenCount, olderTypes };
 }
 
 app.get('/healthz', wrap(async (req, res) => { await db.init(); res.send('ok'); }));
@@ -64,6 +81,18 @@ app.get('/cron/vaccine-reminders', wrap(async (req, res) => {
   const secret = (process.env.CRON_SECRET || '').trim();
   if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).send('unauthorized');
   res.json(await sendReminders(baseUrl(req)));
+}));
+
+// ---- Razorpay webhook ----
+// Razorpay reports here when a subscription starts, renews, fails for good or ends. This keeps the plan right
+// even if the parent closed the browser mid-payment, or a renewal fails months later.
+app.post('/razorpay/webhook', wrap(async (req, res) => {
+  if (!pay.validWebhook(req.rawBody, req.get('x-razorpay-signature'))) return res.status(400).send('bad signature');
+  const sub = req.body?.payload?.subscription?.entity;
+  const plan = pay.PLAN_AFTER[req.body?.event];
+  const space = sub?.id && plan ? await db.spaceBySubscription(sub.id) : null;
+  if (space) await db.setPlan(space.id, plan, pay.periodOfPlan(sub.plan_id));
+  res.send('ok'); // always 200 once the signature is good, or Razorpay keeps retrying
 }));
 
 // ---- Sign-in ----
@@ -142,7 +171,7 @@ const withSpace = wrap(async (req, res, next) => {
 });
 
 app.get('/f/:key', withSpace, wrap(async (req, res) => {
-  const [data, stamp] = await Promise.all([boardData(req.space.id, req.query), db.stamp(req.space.id)]);
+  const [data, stamp] = await Promise.all([boardData(req.space, req.query), db.stamp(req.space.id)]);
   const now = localNow(req);
   const upcoming = await db.listAppointments(req.space.id, { child: data.child, from: now });
   // Right-panel vaccine card: the soonest visit still to be given, among the children on view.
@@ -154,8 +183,71 @@ app.get('/f/:key', withSpace, wrap(async (req, res) => {
     if (next && (!vaccine || vaccine.setup || next.from < vaccine.visit.from)) vaccine = { child: c, visit: next };
     else if (!next && !vaccine) vaccine = { child: c, done: true };
   }
-  res.send(views.timeline({ space: req.space, ...data, upcoming, vaccine, now, stamp, welcome: req.query.welcome === '1' }));
+  res.send(views.timeline({ space: req.space, ...data, upcoming, vaccine, now, stamp, welcome: req.query.welcome === '1', upgraded: req.query.upgraded === '1' }));
 }));
+
+// ---- Plan and the demo checkout ----
+// No real payment exists yet: the checkout has one button that simulates a successful payment and one that simulates a failure.
+const REASONS = ['child', 'history', 'saved', 'general'];
+const upgradeUrl = (space, reason, extra = '') => `/f/${space.key}/upgrade?reason=${reason}${extra}`;
+
+app.get('/f/:key/upgrade', withSpace, (req, res) => {
+  const reason = REASONS.includes(req.query.reason) ? req.query.reason : 'general';
+  res.send(views.upgrade({ space: req.space, reason, failed: req.query.failed === '1', cancelFailed: req.query.cancelfailed === '1' }));
+});
+
+// Demo checkout, used only while Razorpay is not configured: one button succeeds, the other fails.
+app.post('/f/:key/upgrade', withSpace, wrap(async (req, res) => {
+  const reason = REASONS.includes(req.body.reason) ? req.body.reason : 'general';
+  if (pay.enabled()) return res.redirect(303, upgradeUrl(req.space, reason));
+  if (req.body.outcome !== 'success') return res.redirect(303, upgradeUrl(req.space, reason, '&failed=1'));
+  await db.setPlan(req.space.id, 'premium', req.body.period);
+  res.redirect(303, `/f/${req.space.key}${reason === 'child' ? '/kids' : ''}?upgraded=1`);
+}));
+
+// Razorpay checkout, step 1: create the subscription the parent is about to pay for.
+app.post('/f/:key/upgrade/start', withSpace, wrap(async (req, res) => {
+  if (!pay.enabled()) return res.status(404).json({ error: 'Payments are not set up.' });
+  if (db.isPremium(req.space)) return res.status(400).json({ error: 'Your family is already on Premium.' });
+  try {
+    const sub = await pay.createSubscription(req.body?.period, req.space);
+    await db.setSubscription(req.space.id, sub.id);
+    res.json({ key: pay.keyId(), subscription_id: sub.id, email: req.user.email, description: `Premium, ${db.PRICES[sub.period].price}` });
+  } catch (e) {
+    console.error(e);
+    res.status(502).json({ error: 'Could not start the payment. Nothing was charged. Please try again.' });
+  }
+}));
+
+// Step 2: the browser says the payment went through. Believe it only if Razorpay's signature checks out.
+app.post('/f/:key/upgrade/verify', withSpace, wrap(async (req, res) => {
+  const subscriptionId = req.space.razorpay_subscription_id;
+  if (!pay.enabled() || !pay.validPayment({ paymentId: req.body?.payment_id, subscriptionId, signature: req.body?.signature })) {
+    return res.status(400).json({ error: 'We could not confirm this payment. If money was taken, your plan will update within a few minutes.' });
+  }
+  if (!db.isPremium(req.space)) await db.setPlan(req.space.id, 'premium', req.body?.period); // the webhook may have got here first
+  res.json({ redirect: `/f/${req.space.key}${req.body?.reason === 'child' ? '/kids' : ''}?upgraded=1` });
+}));
+
+// Back to Free. A Razorpay subscription is cancelled there first, so no further charges are made. No data is removed.
+app.post('/f/:key/downgrade', withSpace, wrap(async (req, res) => {
+  const subscriptionId = req.space.razorpay_subscription_id;
+  if (pay.enabled() && subscriptionId && db.isPremium(req.space)) {
+    try { await pay.cancelSubscription(subscriptionId); } catch (e) {
+      console.error(e);
+      return res.redirect(303, `/f/${req.space.key}/upgrade?cancelfailed=1`);
+    }
+  }
+  await db.setPlan(req.space.id, 'free');
+  res.redirect(303, `/f/${req.space.key}/upgrade`);
+}));
+
+// Sends a Free family to the checkout when they open or change a record older than 90 days.
+const unlessLocked = (handler) => wrap(async (req, res, next) => {
+  const entry = await db.getEntry(req.space.id, req.params.id);
+  if (entry && db.isLocked(req.space, entry)) return res.redirect(303, upgradeUrl(req.space, 'history'));
+  return handler(req, res, next);
+});
 
 app.get('/f/:key/stamp', withSpace, wrap(async (req, res) => res.type('text').send(await db.stamp(req.space.id))));
 
@@ -275,7 +367,7 @@ app.post('/f/:key/appointments/:id/delete', withSpace, wrap(async (req, res) => 
 
 // ---- Child profiles ----
 app.get('/f/:key/kids', withSpace, wrap(async (req, res) =>
-  res.send(views.kids({ space: req.space, children: await db.listChildren(req.space.id), first: req.query.first === '1' }))));
+  res.send(views.kids({ space: req.space, children: await db.listChildren(req.space.id), first: req.query.first === '1', upgraded: req.query.upgraded === '1' }))));
 
 app.post('/f/:key/kids', withSpace, wrap(async (req, res) => {
   const dob = db.requireDob(req.body.dob);
@@ -380,17 +472,19 @@ app.post('/f/:key/entries', withSpace, wrap(async (req, res) => {
     const children = await db.listChildren(req.space.id);
     return res.status(400).send(views.entryForm({ space: req.space, entry: { ...body, occurred_at: db.normaliseWhen(body.occurred_at) || '' }, error: v.error, isNew: true, children }));
   }
-  await db.addEntry(req.space.id, v.value, 'manual');
+  const saved = await db.addEntry(req.space.id, v.value, 'manual');
+  // Saved, but dated before the Free plan's 90 days: say so instead of letting it silently disappear.
+  if (db.isLocked(req.space, saved)) return res.redirect(303, upgradeUrl(req.space, 'saved'));
   res.redirect(303, `/f/${req.space.key}`);
 }));
 
-app.get('/f/:key/e/:id', withSpace, wrap(async (req, res) => {
+app.get('/f/:key/e/:id', withSpace, unlessLocked(async (req, res) => {
   const entry = await db.getEntry(req.space.id, req.params.id);
   if (!entry) return res.status(404).send(views.notFound('That entry no longer exists.'));
   res.send(views.entryForm({ space: req.space, entry, isNew: false, children: await db.listChildren(req.space.id) }));
 }));
 
-app.post('/f/:key/e/:id', withSpace, wrap(async (req, res) => {
+app.post('/f/:key/e/:id', withSpace, unlessLocked(async (req, res) => {
   const existing = await db.getEntry(req.space.id, req.params.id);
   if (!existing) return res.status(404).send(views.notFound('That entry no longer exists.'));
   const body = { ...req.body, details: req.body.details ?? '', temperature: req.body.temperature ?? '', flagged: req.body.flagged === 'on' };
@@ -406,13 +500,13 @@ app.post('/f/:key/e/:id', withSpace, wrap(async (req, res) => {
   res.redirect(303, `/f/${req.space.key}`);
 }));
 
-app.post('/f/:key/e/:id/flag', withSpace, wrap(async (req, res) => {
+app.post('/f/:key/e/:id/flag', withSpace, unlessLocked(async (req, res) => {
   const existing = await db.getEntry(req.space.id, req.params.id);
   if (existing) await db.updateEntry(req.space.id, existing.id, { flagged: !existing.flagged });
   res.redirect(303, req.get('referer')?.startsWith(baseUrl(req)) ? req.get('referer') : `/f/${req.space.key}`);
 }));
 
-app.post('/f/:key/e/:id/delete', withSpace, wrap(async (req, res) => {
+app.post('/f/:key/e/:id/delete', withSpace, unlessLocked(async (req, res) => {
   await db.deleteEntry(req.space.id, req.params.id);
   res.redirect(303, `/f/${req.space.key}`);
 }));
@@ -422,13 +516,15 @@ app.get('/d/:token', wrap(async (req, res) => {
   const share = await db.resolveShare(req.params.token);
   if (!share) return res.status(404).send(views.notFound('This share link is not valid or has been turned off.'));
   const lock = { child: share.child, flaggedOnly: share.flaggedOnly };
-  res.send(views.doctorView({ space: share.space, token: req.params.token, lock, ...(await boardData(share.space.id, req.query, lock)) }));
+  res.send(views.doctorView({ space: share.space, token: req.params.token, lock, ...(await boardData(share.space, req.query, lock)) }));
 }));
 
 app.use((req, res) => res.status(404).send(views.notFound()));
 app.use((err, req, res, next) => {
-  console.error(err);
   if (res.headersSent) return next(err);
+  // A second child on the Free plan, from any form: open the checkout instead of an error page.
+  if (err?.code === 'child_limit' && req.space) return res.redirect(303, upgradeUrl(req.space, 'child'));
+  console.error(err);
   res.status(500).send(views.notFound('Something went wrong on our side. Please try again.'));
 });
 

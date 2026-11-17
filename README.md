@@ -130,6 +130,22 @@ The doctor opens the link in any browser. They can read and print it, and cannot
 
 Every link you create is listed on the same page with a **Turn off** button. A link that is turned off stops working straight away.
 
+## Free and Premium
+
+| | Free | Premium |
+|---|---|---|
+| Child profiles | 1 | Unlimited |
+| Records you can see | The last 90 days | Your full history |
+| Vaccine schedule, calendar and email reminders | Included | Included |
+| Price | Free | ₹99 per month, or ₹999 per year |
+
+- **Nothing is deleted on Free.** Records from days 91 to 100 show on the timeline as locked cards with the date only. Anything older is kept and counted in one line at the bottom. Everything reappears when you upgrade.
+- **The plan covers the family.** One upgrade unlocks every parent on the **Parents** page, your Claude, and the doctor links.
+- **Where you are asked to upgrade:** when you try to add a second child, and when you try to open a record older than 90 days.
+- **Payments go through Razorpay.** Pick Monthly or Yearly and click **Pay with Razorpay**. KidLog never sees your card or UPI details. To stop, open the plan page from the **Premium** button in the top bar and click **Cancel subscription**: no further payments are taken, your family returns to Free, and nothing is deleted.
+- **Refunds:** cancel within 7 days of starting Premium and write to the support address for a full refund. The terms are on the **Privacy** page.
+- **If a payment fails,** the checkout says why, nothing is charged, and you stay on Free. You can try again straight away.
+
 ## Good to know
 
 - **Privacy:** your timeline opens only for the Google accounts listed on the **Parents** page. KidLog stores your Google name and email address, never a password. Share links for doctors are separate and read-only. The **Privacy** link at the bottom of every page says what KidLog stores and how to have it deleted.
@@ -226,6 +242,8 @@ The server's instructions tell Claude to record only what the parent said, to ad
 | `/join/<token>` | Invite link: sign in and join the family |
 | `/f/<key>/appointments` | Appointments list, add and edit |
 | `/f/<key>/share` | Create and turn off doctor share links |
+| `/f/<key>/upgrade` | Plan page with the checkout (query: `reason=child|history|saved|general`). `POST /upgrade/start` creates the Razorpay subscription, `POST /upgrade/verify` checks the payment signature, `POST /downgrade` cancels and returns to Free |
+| `/razorpay/webhook` | Razorpay reports subscription events here; requests are accepted only with a valid signature |
 | `/f/<key>/connect` | The connector address and setup steps; `POST /connect/disconnect` ends that parent's Claude connection |
 | `/privacy` | Public privacy policy |
 | `/authorize`, `/token`, `/register`, `/revoke`, `/oauth/consent` | Connector sign-in (see above) |
@@ -240,7 +258,7 @@ The server's instructions tell Claude to record only what the parent said, to ad
 | `sessions` | Signed-in browsers: hash of the cookie token, user, expiry (30 days) |
 | `oauth_clients` | Apps registered to connect (Claude registers itself); unused ones are cleared after 30 days |
 | `oauth_grants` | Connector sign-in records: pending approvals, one-time codes, access and refresh tokens, all as hashes with an expiry |
-| `spaces` | One row per family: private key, name, the account that created it |
+| `spaces` | One row per family: private key, name, the account that created it, plan (`free` or `premium`), billing period, Premium start date |
 | `space_members` | Which accounts can open which family; one family per account |
 | `invites` | Pending invite link per family: token, expiry (7 days); deleted when used |
 | `children` | Name, birth date and chosen vaccine schedule, unique per family |
@@ -260,6 +278,27 @@ A family created before sign-in existed has no owner. The first person to open i
 - **Dose ids are permanent.** Saved records refer to ids such as `6w.penta1`, so rename a label freely but never reuse or change an id.
 - **Statuses:** a visit is due soon from 14 days before its date, due from that date, and overdue after its age range ends (or 28 days after a single date). KidLog does not compute catch-up schedules.
 - **Reminder emails:** `vercel.json` schedules `/cron/vaccine-reminders` once a day at 02:30 UTC (08:00 in India; Vercel's Hobby plan may run it up to an hour later). It emails parents who opted in, a week before a visit and on the day, through Resend. `REMINDER_TZ` sets whose "today" is used.
+
+### Plan limits
+
+The limits are constants in `db.js` (`FREE`, `PRICES`) and are applied when reading, never by deleting:
+
+- `canonicalChild` refuses a new child name once a Free family has one child. Web forms redirect to the checkout; MCP tools return a message with the upgrade address.
+- `boardData` in `app.js` splits a Free family's entries into visible (last 90 days), locked (days 91 to 100) and hidden (older). The doctor view shows only the visible ones.
+- Entry routes and `update_event` refuse to open or change a locked entry. `get_timeline` returns only visible entries plus a count of the rest.
+- The checkout is a `<dialog>` rendered by `paywall()` in `views.js`.
+
+### Payments (Razorpay Subscriptions)
+
+`razorpay.js` holds the whole integration, written with `fetch`.
+
+1. **Start:** the browser posts the chosen period to `/upgrade/start`. The server creates a Razorpay subscription for that plan and stores its id on the family.
+2. **Pay:** the page loads Razorpay's `checkout.js` and opens it with that subscription id. KidLog's own dialog closes first, so it does not cover Razorpay's window.
+3. **Verify:** Razorpay hands the browser a payment id and a signature, which it posts to `/upgrade/verify`. The server recomputes HMAC-SHA256 of `payment_id|subscription_id` with the key secret, using the subscription id it stored, and upgrades the family only on a match.
+4. **Webhook:** `/razorpay/webhook` checks the `X-Razorpay-Signature` header against the raw request body and the webhook secret. `subscription.activated` and `subscription.charged` set Premium; `halted`, `cancelled`, `completed` and `expired` set Free. This covers a parent who closes the browser mid-payment and renewals that fail later.
+5. **Cancel:** `/downgrade` cancels the subscription at Razorpay first, then sets Free.
+
+**Test mode and live mode** differ only in the keys. With `rzp_test_` keys the checkout is labelled as test mode and no money moves. **Demo mode:** if the Razorpay variables are not set, the checkout shows **Simulate successful payment** and **Simulate failed payment** buttons instead, which is how the app behaves on a fresh local install.
 
 Dates and times are stored as local text (`YYYY-MM-DDTHH:MM`) exactly as the parent gave them, with no timezone conversion.
 
@@ -295,6 +334,9 @@ Then open http://localhost:3000.
 | `EMAIL_FROM` | For reminder emails | Sender, on a domain verified in Resend, e.g. `KidLog <reminders@yourdomain.com>` |
 | `CRON_SECRET` | For reminder emails | A random string of 16 or more characters. Vercel sends it with the daily job, and KidLog refuses the job without it |
 | `REMINDER_TZ` | No | Time zone used to decide today's date for reminders; defaults to `Asia/Kolkata` |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` | For payments | API keys from the Razorpay dashboard; test keys start with `rzp_test_` |
+| `RAZORPAY_PLAN_MONTHLY`, `RAZORPAY_PLAN_YEARLY` | For payments | Ids of the two plans created in Razorpay (₹99 monthly, ₹999 yearly) |
+| `RAZORPAY_WEBHOOK_SECRET` | For payments | The secret entered when adding the webhook `https://<your site>/razorpay/webhook` in Razorpay |
 
 ## Deploy
 
@@ -320,6 +362,7 @@ Then open http://localhost:3000.
 | `vaccines.js` | The two vaccine schedules, due-date and status rules, and the calendar file |
 | `vaccine-jobs.js` | Recording doses as given, and the daily reminder emails |
 | `mail.js` | Sends email through Resend |
+| `razorpay.js` | Payments: create and cancel subscriptions, check payment and webhook signatures |
 | `mcp.js` | The MCP endpoint, tool definitions and instructions to Claude |
 | `db.js` | Tables, queries and input validation |
 | `views.js` | HTML pages and CSS |

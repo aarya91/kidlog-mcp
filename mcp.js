@@ -18,7 +18,8 @@ How entries are written:
 - get_vaccine_schedule shows a published standard schedule next to what the parent has recorded. It is not medical advice; the child's paediatrician decides which vaccines are given and when.
 - Future doctor or vaccine appointments go in add_appointment. log_event is for things that already happened.
 - Dates and times are the parent's local date and time. With no date given, today's date applies; with no time given, the current time.
-- Each save returns a timeline_url where the parent can review the entry.`;
+- Each save returns a timeline_url where the parent can review the entry.
+- A family on the Free plan has one child profile and sees the last 90 days of records. A tool that meets one of these limits says so and returns the address where the parent can upgrade.`;
 
 const when = z.string().describe("Local date and time of the event, formatted YYYY-MM-DDTHH:MM (24-hour), e.g. 2026-11-10T02:15");
 const category = z.enum(db.CATEGORIES).describe('symptom, temperature, medicine, feeding, sleep, doctor_visit, vaccine, or note');
@@ -41,6 +42,15 @@ const fail = (msg) => ({ content: [{ type: 'text', text: msg }], isError: true }
 function buildServer(space, baseUrl) {
   const server = new McpServer({ name: 'kidlog', version: '1.0.0' }, { instructions: INSTRUCTIONS });
   const timelineUrl = `${baseUrl}/f/${space.key}`;
+  const upgradeUrl = `${timelineUrl}/upgrade`;
+  const lockedNote = `Records older than ${db.FREE.viewDays} days are locked on the Free plan. The parent can unlock them by upgrading at ${upgradeUrl}`;
+  // Turns the Free plan's one-child limit into a plain message for the parent instead of a failure.
+  const guard = (fn) => async (a) => {
+    try { return await fn(a); } catch (e) {
+      if (e?.code === 'child_limit') return fail(`This family is on the Free plan, which includes one child profile, so a second child was not added. The parent can upgrade at ${upgradeUrl}?reason=child`);
+      throw e;
+    }
+  };
 
   server.registerTool('log_event', {
     title: 'Log a health event',
@@ -57,7 +67,7 @@ function buildServer(space, baseUrl) {
       flag_for_doctor: z.boolean().optional().describe('True only if the parent says they want to raise this with the doctor'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-  }, async (a) => {
+  }, guard(async (a) => {
     const v = db.validateEntry({
       child: a.child_name, occurred_at: a.occurred_at, category: a.category, title: a.title,
       details: a.details, temperature: a.temperature, flagged: a.flag_for_doctor,
@@ -65,8 +75,12 @@ function buildServer(space, baseUrl) {
     if (v.error) return fail(v.error);
     const e = await db.addEntry(space.id, v.value, 'claude');
     const profile = (await db.listChildren(space.id)).find((c) => c.child === e.child);
-    return ok({ saved: shape(e), timeline_url: timelineUrl, edit_url: `${timelineUrl}/e/${e.id}`, ...(profile && !profile.dob ? { birth_date_missing: true } : {}) });
-  });
+    return ok({
+      saved: shape(e), timeline_url: timelineUrl, edit_url: `${timelineUrl}/e/${e.id}`,
+      ...(profile && !profile.dob ? { birth_date_missing: true } : {}),
+      ...(db.isLocked(space, e) ? { note: `Saved. ${lockedNote}` } : {}),
+    });
+  }));
 
   server.registerTool('get_timeline', {
     title: 'Read the timeline',
@@ -87,7 +101,9 @@ function buildServer(space, baseUrl) {
     const entries = await db.listEntries(space.id, {
       child: a.child_name, from, to: toDay ? toDay.slice(0, 10) + 'T23:59' : undefined, flaggedOnly: a.flagged_only, limit: 200,
     });
-    return ok({ count: entries.length, entries: entries.map(shape), timeline_url: timelineUrl });
+    const visible = entries.filter((e) => !db.isLocked(space, e));
+    const lockedCount = entries.length - visible.length;
+    return ok({ count: visible.length, entries: visible.map(shape), ...(lockedCount ? { locked_older_entries: lockedCount, note: lockedNote } : {}), timeline_url: timelineUrl });
   });
 
   server.registerTool('update_event', {
@@ -104,16 +120,18 @@ function buildServer(space, baseUrl) {
       flag_for_doctor: z.boolean().optional(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  }, async (a) => {
+  }, guard(async (a) => {
     const v = db.validateEntry({
       child: a.child_name, occurred_at: a.occurred_at, category: a.category, title: a.title,
       details: a.details, temperature: a.temperature, flagged: a.flag_for_doctor,
     }, { partial: true });
     if (v.error) return fail(v.error);
+    const current = await db.getEntry(space.id, a.id);
+    if (current && db.isLocked(space, current)) return fail(lockedNote);
     const e = await db.updateEntry(space.id, a.id, v.value);
     if (!e) return fail(`No entry with id ${a.id}.`);
     return ok({ saved: shape(e), edit_url: `${timelineUrl}/e/${e.id}` });
-  });
+  }));
 
   const kids = async () => (await db.listChildren(space.id)).map((c) => ({
     child: c.child, birth_date: c.dob, age: db.ageLabel(c.dob) || null, vaccine_schedule: SCHEDULES[c.vaccine_schedule]?.name || null, entries: c.entries, latest_entry: c.latest,
@@ -124,7 +142,7 @@ function buildServer(space, baseUrl) {
     description: 'Lists the children in this family with birth date, age and how many entries each has.',
     inputSchema: {},
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, async () => ok({ children: await kids(), timeline_url: timelineUrl }));
+  }, async () => ok({ plan: db.isPremium(space) ? 'premium' : 'free', children: await kids(), timeline_url: timelineUrl }));
 
   server.registerTool('save_child_profile', {
     title: 'Add a child or set a birth date',
@@ -135,13 +153,13 @@ function buildServer(space, baseUrl) {
       birth_date: z.string().describe('Birth date as YYYY-MM-DD, as the parent stated it'),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  }, async (a) => {
+  }, guard(async (a) => {
     const dob = db.requireDob(a.birth_date);
     if (dob.error) return fail(dob.error);
     const r = await db.saveChild(space.id, { name: a.child_name, dob: dob.value });
     if (r.error) return fail(r.error);
     return ok({ saved: (await kids()).find((c) => c.child === r.value), children_url: `${timelineUrl}/kids` });
-  });
+  }));
 
   // ---- Vaccines ----
   const findChild = async (name) => (await db.listChildren(space.id)).find((c) => c.child.toLowerCase() === db.clean(name, 60).toLowerCase());
@@ -213,12 +231,12 @@ function buildServer(space, baseUrl) {
       notes: z.string().optional().describe('Anything the parent wants to remember for it, e.g. clinic name or what to bring'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-  }, async (a) => {
+  }, guard(async (a) => {
     const v = db.validateAppointment({ child: a.child_name, kind: a.type, scheduled_at: a.scheduled_at, title: a.title, notes: a.notes });
     if (v.error) return fail(v.error);
     const saved = await db.addAppointment(space.id, v.value, 'claude');
     return ok({ saved: apptShape(saved), appointments_url: `${timelineUrl}/appointments`, timeline_url: timelineUrl });
-  });
+  }));
 
   server.registerTool('list_appointments', {
     title: 'List appointments',

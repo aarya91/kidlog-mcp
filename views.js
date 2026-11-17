@@ -1,6 +1,9 @@
 // Server-rendered HTML. No frameworks, no AI.
-import { CATEGORIES, ageLabel } from './db.js';
+import { CATEGORIES, ageLabel, FREE, PRICES, isPremium } from './db.js';
 import { SCHEDULES, SCHEDULE_IDS, DISCLAIMER } from './vaccines.js';
+import * as pay from './razorpay.js';
+
+const REFUND_DAYS = 7; // cancel within this many days of starting Premium for a full refund
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -195,6 +198,23 @@ ul.doses li.done span:nth-child(2){flex:1}ul.doses form{margin:0}.dot{width:8px;
 .schedopt{display:flex;gap:12px;align-items:flex-start;border:1.5px solid #cfcce0;border-radius:12px;padding:12px 14px;margin:0 0 10px;font-weight:400;cursor:pointer}
 .schedopt:has(input:checked){border-color:var(--brand);background:var(--soft)}.schedopt input{margin-top:5px}.schedopt b{display:block}.schedopt small{display:block;color:var(--muted);font-size:13.5px;margin-top:2px}
 .note.good{background:#e3f6ee;color:#17603f}
+.planpill{padding:6px 14px;border-radius:999px;text-decoration:none;font-size:14.5px;font-weight:700;background:var(--brand);color:#fff}
+.planpill.prem{background:#fdf1d8;color:#8a5a0b}
+.entry.lockedrow{background:#f3f2f8;border-style:dashed;border-color:#cfcce0}.entry.lockedrow h3{margin-top:2px;color:#55546b}
+.entry.lockedrow.summary{grid-template-columns:40px minmax(0,1fr)}
+.ico.lockico{background:#8b89a3;color:#fff}
+.paywall{border:0;border-radius:20px;padding:0;max-width:480px;width:calc(100% - 32px);color:var(--ink);box-shadow:0 24px 70px rgba(31,29,61,.30)}
+.paywall::backdrop{background:rgba(31,29,61,.55)}
+.paywall[open]:not(:modal){position:static;margin:22px 0;border:2px solid var(--brand)}
+.paywall form{padding:26px 26px 20px}.paywall h2{font-size:23px;color:var(--ink);margin:12px 0 10px;letter-spacing:-.01em;font-weight:700}
+.paywall .why{margin:0 0 12px;font-size:16.5px}.paywall .err{margin:0 0 12px}.paywall .allow{margin-bottom:16px}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+.planopt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid #cfcce0;border-radius:12px;padding:10px 12px;margin:0;font-weight:500;cursor:pointer}
+.planopt:has(input:checked){border-color:var(--brand);background:var(--soft)}
+.planopt input{margin-top:4px}.planopt b{display:block}
+.paywall .testhint{margin:10px 0 0;font-size:14px;color:var(--muted)}
+.paywall .later{margin:14px 0 0;font-size:14.5px}
+@media(max-width:620px){.plans{grid-template-columns:1fr}}
 @media print{header.top,.noprint{display:none!important}body{background:#fff}.card{break-inside:avoid}}
 `;
 
@@ -221,7 +241,7 @@ function page({ title, nav = '', body, head = '', wide = false, bodyClass = '' }
 function spaceNav(space, on) {
   const b = `/f/${esc(space.key)}`;
   const a = (href, id, label) => `<a href="${href}"${on === id ? ' class="on" aria-current="page"' : ''}>${label}</a>`;
-  return `<nav>${a(b, 'timeline', 'Timeline')}${a(b + '/kids', 'kids', 'Children')}${a(b + '/vaccines', 'vaccines', 'Vaccines')}${a(b + '/parents', 'parents', 'Parents')}${a(b + '/connect', 'connect', 'Connect Claude')}${a(b + '/share', 'share', 'Share with doctor')}</nav><form method="post" action="/logout" class="noprint" style="margin:0"><button class="btn ghost small">Sign out</button></form>`;
+  return `<nav>${a(b, 'timeline', 'Timeline')}${a(b + '/kids', 'kids', 'Children')}${a(b + '/vaccines', 'vaccines', 'Vaccines')}${a(b + '/parents', 'parents', 'Parents')}${a(b + '/connect', 'connect', 'Connect Claude')}${a(b + '/share', 'share', 'Share with doctor')}</nav>${isPremium(space) ? `<a class="planpill prem noprint" href="${b}/upgrade">Premium</a>` : `<a class="planpill noprint" href="${b}/upgrade">Upgrade</a>`}<form method="post" action="/logout" class="noprint" style="margin:0"><button class="btn ghost small">Sign out</button></form>`;
 }
 
 const clean = (v) => String(v ?? '').trim().slice(0, 60);
@@ -369,24 +389,115 @@ function vaccineCard({ base, vaccine, shown }) {
 const pickShown = (children, child) =>
   child ? children.find((c) => c.child.toLowerCase() === child.toLowerCase()) : children.length === 1 ? children[0] : null;
 
+const lockSvg = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+
+// The demo checkout. Pages include it closed and open it from any link marked data-paywall="<reason>";
+// the upgrade page shows it open. `reason` picks the sentence that explains why it appeared.
+function paywall({ space, reason = 'general', failed = false, open = false, lockedCount = 0 }) {
+  const b = `/f/${esc(space.key)}`;
+  const why = {
+    child: `You are on the Free plan, which includes ${FREE.children} child profile. Premium lets you add every child in your family.`,
+    history: `The Free plan shows the last ${FREE.viewDays} days of records. Premium unlocks your full history${lockedCount ? `, including the ${lockedCount} older ${lockedCount === 1 ? 'record' : 'records'} already saved` : ''}.`,
+    saved: `Your entry is saved. Because it is dated more than ${FREE.viewDays} days ago, it stays locked on the Free plan until you upgrade.`,
+    general: 'Premium removes the limits of the Free plan for your whole family.',
+  };
+  const real = pay.enabled(); // Razorpay keys are set: show the real checkout instead of the two demo buttons
+  const plan = (id, checked) => `<label class="planopt"><input type="radio" name="period" value="${id}"${checked ? ' checked' : ''}><span><b>${PRICES[id].label}</b>${esc(PRICES[id].price)}</span></label>`;
+  return `<dialog id="paywall" class="paywall" aria-labelledby="pw-title"${open ? ` open data-open="${esc(reason)}"` : ''}>
+    <form method="post" action="${b}/upgrade">
+      <input type="hidden" name="reason" value="${esc(reason)}">
+      <span class="tag plain">${!real ? 'Demo checkout · no real payment is taken' : pay.testMode() ? 'Razorpay test mode · no real money is taken' : 'Secure payment by Razorpay'}</span>
+      <h2 id="pw-title">Upgrade to KidLog Premium</h2>
+      ${failed ? '<div class="err" role="alert"><b>Payment failed.</b> The simulated card was declined. Nothing was charged and you are still on the Free plan. You can try again.</div>' : ''}
+      <div class="err" role="alert" data-payerr hidden></div>
+      ${Object.entries(why).map(([k, text]) => `<p class="why" data-reason="${k}"${k === reason ? '' : ' hidden'}>${esc(text)}</p>`).join('')}
+      <ul class="allow"><li>Unlimited child profiles</li><li>Your full history, with no ${FREE.viewDays}-day limit</li><li>One upgrade covers both parents</li></ul>
+      <div class="plans">${plan('monthly', true)}${plan('yearly', false)}</div>
+      ${real
+        ? `<div class="row"><button type="button" class="btn" data-pay>Pay with Razorpay</button></div>
+           ${pay.testMode() ? '<p class="testhint">Test mode: pay with one of Razorpay\'s test cards or test UPI. Razorpay then lets you choose whether the payment succeeds or fails.</p>' : `<p class="testhint">Cancel at any time on the plan page. Cancel within ${REFUND_DAYS} days for a full refund.</p>`}`
+        : '<div class="row"><button class="btn" name="outcome" value="success">Simulate successful payment</button><button class="btn ghost" name="outcome" value="fail">Simulate failed payment</button></div>'}
+      <p class="later">${open ? `<a href="${b}">Not now, back to the timeline</a>` : '<button type="button" class="linkbtn" data-close>Not now</button>'}</p>
+    </form>
+  </dialog>
+  <script>(function(){var d=document.getElementById('paywall');if(!d||!d.showModal)return;
+    function show(r){d.querySelectorAll('[data-reason]').forEach(function(p){p.hidden=p.getAttribute('data-reason')!==r});d.querySelector('input[name=reason]').value=r;if(d.open)d.close();d.showModal()}
+    document.addEventListener('click',function(e){var a=e.target.closest('[data-paywall]');if(a){e.preventDefault();show(a.getAttribute('data-paywall'))}});
+    var c=d.querySelector('[data-close]');if(c)c.addEventListener('click',function(){d.close()});
+    if(d.hasAttribute('data-open'))show(d.getAttribute('data-open'));
+    // Razorpay checkout: create the subscription, hand over to Razorpay's own window, then confirm the result with KidLog.
+    var payBtn=d.querySelector('[data-pay]');if(!payBtn)return;
+    var base=${JSON.stringify(`/f/${space.key}`)},label=payBtn.textContent,err=d.querySelector('[data-payerr]'),json={'content-type':'application/json'};
+    function stop(m){payBtn.disabled=false;payBtn.textContent=label;if(m){err.textContent=m;err.hidden=false}if(!d.open)d.showModal()}
+    function post(path,body){return fetch(base+path,{method:'POST',headers:json,body:JSON.stringify(body)}).then(function(r){return r.json()})}
+    payBtn.addEventListener('click',function(){
+      var f=d.querySelector('form'),period=f.elements.period.value,reason=f.elements.reason.value,lastFail='',done=false;
+      err.hidden=true;payBtn.disabled=true;payBtn.textContent='Opening Razorpay…';
+      function go(){post('/upgrade/start',{period:period}).then(function(s){
+        if(!s.subscription_id)return stop(s.error||'Could not start the payment. Nothing was charged. Please try again.');
+        var rz=new Razorpay({key:s.key,subscription_id:s.subscription_id,name:'KidLog Premium',description:s.description,prefill:{email:s.email},theme:{color:'#4b45b0'},
+          handler:function(p){done=true;payBtn.textContent='Confirming payment…';if(!d.open)d.showModal();
+            post('/upgrade/verify',{payment_id:p.razorpay_payment_id,signature:p.razorpay_signature,period:period,reason:reason}).then(function(v){if(v.redirect)location.href=v.redirect;else stop(v.error)}).catch(function(){stop('We could not confirm this payment. If money was taken, your plan will update within a few minutes.')})},
+          modal:{ondismiss:function(){if(!done)stop(lastFail?'Payment failed: '+lastFail+' Nothing was charged and you are still on the Free plan. You can try again.':'The payment was not completed. Nothing was charged.')}}});
+        rz.on('payment.failed',function(x){lastFail=(x&&x.error&&x.error.description)||'the payment was declined.'});
+        d.close();rz.open(); // our dialog must step aside, or it would sit on top of Razorpay's window
+      }).catch(function(){stop('Could not reach the payment service. Nothing was charged. Please try again.')})}
+      if(window.Razorpay)go();else{var sc=document.createElement('script');sc.src='https://checkout.razorpay.com/v1/checkout.js';sc.onload=go;sc.onerror=function(){stop('Could not load Razorpay. Check your connection and try again.')};document.head.appendChild(sc)}
+    });
+  })();</script>`;
+}
+
+export function upgrade({ space, reason, failed, cancelFailed }) {
+  const b = `/f/${esc(space.key)}`;
+  const premium = isPremium(space);
+  const paid = pay.enabled() && !!space.razorpay_subscription_id; // a real Razorpay subscription, not a demo upgrade
+  const status = premium
+    ? `<div class="card ok"><b>You are on Premium</b>
+        <p style="margin:4px 0 12px">${esc(PRICES[space.plan_period]?.price || '')}${space.premium_since ? ` · since ${dateOnly(space.premium_since)}` : ''}. Unlimited children and your full history are unlocked for both parents.</p>
+        ${cancelFailed ? '<div class="err" role="alert" style="margin:0 0 12px">We could not cancel the subscription with Razorpay just now, so nothing has changed. Please try again in a minute.</div>' : ''}
+        <form method="post" action="${b}/downgrade" style="margin:0" onsubmit="return window.confirm('${paid ? 'Cancel your Premium subscription? No further payments will be taken and your family returns to the Free plan now.' : 'Switch back to the Free plan?'} Nothing is deleted. Records older than ${FREE.viewDays} days will be locked again.')"><button class="btn danger small">${paid ? 'Cancel subscription' : 'Switch back to Free (demo)'}</button></form></div>`
+    : `<div class="card"><b>You are on the Free plan</b>
+        <ul class="allow"><li>${FREE.children} child profile</li><li>The last ${FREE.viewDays} days of records on view</li><li>Older records are kept and unlock with Premium</li></ul>
+        <p class="row" style="margin:14px 0 0"><a class="btn" href="${b}/upgrade?reason=general" data-paywall="general">Upgrade to Premium</a></p></div>`;
+  return page({
+    title: 'Your plan · KidLog',
+    nav: spaceNav(space, 'plan'),
+    body: `<h1>Your plan</h1>
+      <p class="lead">The plan belongs to the family, so it covers every parent on the Parents page. Cancel within ${REFUND_DAYS} days of starting Premium for a full refund: see the <a href="/privacy">refund terms</a>.</p>
+      ${status}
+      <div class="card"><b>Premium</b><p style="margin:4px 0 0">${esc(PRICES.monthly.price)}, or ${esc(PRICES.yearly.price)}. Unlimited child profiles and your full history.</p></div>
+      <p class="note">${!pay.enabled() ? 'Payments are simulated for now. The checkout takes no card details and no money.' : pay.testMode() ? 'Payments run through Razorpay in test mode. No real money is taken, and KidLog never sees card or UPI details.' : 'Payments are handled by Razorpay. KidLog never sees your card or UPI details.'}</p>
+      ${premium ? '' : paywall({ space, reason, failed, open: true })}`,
+  });
+}
+
 // Shared by the family timeline and the read-only doctor view.
-function board({ space, base, all, entries, children, child, flagged, range, readOnly, shareHref, connectHref, lock = {}, upcoming = [], now = '', vaccine = null }) {
+function board({ space, base, all, entries, children, child, flagged, range, readOnly, shareHref, connectHref, lock = {}, upcoming = [], now = '', vaccine = null, premium = true, locked = [], hiddenCount = 0, olderTypes = [] }) {
   const shown = pickShown(children, child);
   const age = shown ? ageLabel(shown.dob) : '';
   const total = shown && !lock.flaggedOnly ? shown.entries : all.length; // a flagged-only link must not reveal the full count
   const name = shown ? shown.child : space.name;
   const latest = (cat) => {
     const e = all.find((x) => x.category === cat);
-    return e ? shortDay(e.occurred_at).replace(/^\w+, /, '') : 'None logged';
+    return e ? shortDay(e.occurred_at).replace(/^\w+, /, '') : olderTypes.includes(cat) ? `Over ${FREE.viewDays} days ago` : 'None logged';
   };
   const count = (cat) => entries.filter((e) => e.category === cat).length;
   const flaggedCount = all.filter((e) => e.flagged).length;
   const stat = (cat, label, value) => `<div class="stat">${icon(cat)}<div><span>${label}</span><b>${esc(value)}</b></div></div>`;
   const rangeLabel = (RANGES.find((r) => r[0] === range) || RANGES[0])[1];
   const row = (cat, label, n) => `<li>${icon(cat)}<span>${label}</span><b>${n}</b></li>`;
+  // Free plan: days 91 to 100 show as locked cards (date only); anything older is one summary line. Doctors see neither.
+  const unlock = `<a class="btn small" href="${base}/upgrade?reason=history" data-paywall="history">Unlock with Premium</a>`;
+  const lockedCards = readOnly || range !== 'all' ? '' : locked.map((e) => `<article class="entry lockedrow">
+      <div class="when"><b>${shortDay(e.occurred_at)}</b>${!shown ? `<span class="who">${esc(e.child)}</span>` : ''}</div>
+      <span class="ico lockico" aria-hidden="true">${lockSvg}</span>
+      <div class="body"><h3>Locked record</h3><p class="details">Older than ${FREE.viewDays} days. It is saved, and Premium unlocks it.</p><div class="actions noprint">${unlock}</div></div>
+    </article>`).join('') + (hiddenCount ? `<div class="entry lockedrow summary"><span class="ico lockico" aria-hidden="true">${lockSvg}</span>
+      <div class="body"><h3>${hiddenCount} older ${hiddenCount === 1 ? 'record is' : 'records are'} stored</h3><p class="details">Records more than ${FREE.storeDays} days old are kept safely and reappear when you upgrade.</p><div class="actions noprint">${unlock}</div></div></div>` : '');
+  const limitNote = !premium && readOnly ? `<p class="note" style="margin-top:14px">This view shows records from the last ${FREE.viewDays} days.</p>` : '';
   const list = entries.length
     ? entries.map((e) => entryCard(e, { base, readOnly, showChild: !shown })).join('')
-    : readOnly || all.length
+    : lockedCards ? '' : readOnly || all.length
       ? '<div class="entry empty">No entries match this view.</div>'
       : `<div class="entry empty"><div><p><b>Nothing here yet.</b></p><p>Connect Claude and tell it what happened, or add an entry yourself.</p>
          <p class="row" style="justify-content:center"><a class="btn" href="${connectHref}">Connect Claude</a><a class="btn ghost" href="${base}/new">Add an entry</a></p></div></div>`;
@@ -412,7 +523,7 @@ function board({ space, base, all, entries, children, child, flagged, range, rea
           ${readOnly ? '<button class="btn ghost noprint" onclick="window.print()">Print</button>' : `<a class="btn noprint" href="${base}/new${shown ? `?child=${encodeURIComponent(shown.child)}` : ''}">Add an entry</a>`}
         </div>
         ${filterChips({ children, child, base, flagged, range, lock })}
-        ${list}
+        ${list}${lockedCards}${limitNote}
       </div>
       <aside>
         ${readOnly ? '' : `${upcomingCard({ base, upcoming, shown, now })}
@@ -497,6 +608,7 @@ export function howItWorks({ user } = {}) {
         <p style="margin-top:0"><b>KidLog has no AI inside.</b> Your own Claude does the reading and writing. KidLog only saves, shows and shares what you told it.</p>
         <p><b>It does not give medical advice.</b> KidLog does not diagnose, rate urgency or suggest treatment. If you are worried about your child, contact your doctor.</p>
         <p><b>Who can see your timeline.</b> Only the Google accounts on your Parents page can open it. Doctors see only the read-only links you create. The <a href="/privacy">privacy policy</a> says what KidLog stores.</p>
+        <p><b>Free and Premium.</b> The Free plan covers one child and shows the last ${FREE.viewDays} days of records. Premium adds unlimited children and your full history. Older records are never deleted on Free; they unlock when you upgrade.</p>
         <p style="margin-bottom:0"><b>What you need.</b> A Google account and a Claude account.</p>
       </div>
       <p class="row" style="margin-top:22px">${user ? '<a class="btn" href="/">Go to my timeline</a>' : '<a class="btn" href="/auth/google">Continue with Google</a><a class="btn ghost" href="/">Back to the home page</a>'}</p>`,
@@ -578,14 +690,16 @@ export function parents({ space, members, invite, base, me, isOwner }) {
   });
 }
 
-export function timeline({ space, all, entries, children, child, flagged, range, upcoming, vaccine, now, stamp, welcome }) {
+export function timeline({ space, all, entries, children, child, flagged, range, upcoming, vaccine, now, stamp, welcome, upgraded, premium, locked, hiddenCount, olderTypes }) {
   const base = `/f/${esc(space.key)}`;
   return page({
     title: `${space.name} · KidLog`,
     nav: spaceNav(space, 'timeline'),
     wide: true,
     body: `${welcome ? `<p class="note" style="margin-top:20px">Your timeline is ready. Sign in with Google at any time to get back to it. Next,<a href="${base}/connect">connect Claude</a>.</p>` : ''}
-      ${board({ space, base, all, entries, children, child, flagged, range, upcoming, vaccine, now, readOnly: false, shareHref: `${base}/share`, connectHref: `${base}/connect` })}
+      ${upgraded ? '<p class="note good" style="margin-top:20px"><b>Payment successful.</b> Your family is on Premium: every child and your full history are unlocked.</p>' : ''}
+      ${board({ space, base, all, entries, children, child, flagged, range, upcoming, vaccine, now, readOnly: false, shareHref: `${base}/share`, connectHref: `${base}/connect`, premium, locked, hiddenCount, olderTypes })}
+      ${premium ? '' : paywall({ space, reason: 'history', lockedCount: locked.length + hiddenCount })}
       <script>
       (function(){var s=${JSON.stringify(stamp)};setInterval(function(){
         if(document.hidden)return;
@@ -712,12 +826,13 @@ export function privacy({ user, supportEmail }) {
         <li><b>Vaccines:</b> the schedule you choose for each child, which doses you mark as given and on what date, and whether you asked for reminder emails.</li>
         <li><b>Links you create:</b> doctor share links and parent invite links.</li>
         <li><b>Sign-in records:</b> a record that your browser is signed in, and a record that your Claude is connected. These are stored in scrambled form (hashes), not as usable keys.</li>
+        <li><b>Your plan:</b> whether your family is on Free or Premium, the billing period, the date Premium started, and the reference number of your subscription at Razorpay.</li>
       </ul>
       <p>KidLog uses two cookies: one that keeps you signed in, and one that remembers your time zone so dates show correctly. It has no advertising or analytics trackers.</p>
       <p>The vaccine schedule shown in KidLog is a published standard schedule, worked out from the birth date you enter. It is not medical advice, and your paediatrician decides what your child needs.</p>
 
       <h2>What KidLog does not collect</h2>
-      <p>KidLog does not read your Claude conversations. It receives only the specific entries, appointments and requests that Claude sends through the KidLog connector. It does not collect your location, contacts or payment details.</p>
+      <p>KidLog does not read your Claude conversations. It receives only the specific entries, appointments and requests that Claude sends through the KidLog connector. It does not collect your location or contacts. Card, UPI and bank details are entered on Razorpay's payment window and never reach KidLog.</p>
 
       <h2>How your information is used</h2>
       <p>Only to run the service: to show your timeline to you and the parents you invite, to show a read-only view to someone you give a doctor link to, and to let your Claude read and add entries when you ask it to. We do not sell your information, use it for advertising, or use it to train AI models.</p>
@@ -734,6 +849,7 @@ export function privacy({ user, supportEmail }) {
         <li><b>Google</b> handles sign-in and tells us your name and email address.</li>
         <li><b>Vercel</b> hosts the KidLog website, and <b>Neon</b> hosts the database where your information is kept. Their technical logs may record your IP address and the pages requested.</li>
         <li><b>Resend</b> sends vaccine reminder emails, only to parents who turn them on. It receives your email address and the text of the reminder, which names your child and the vaccines due.</li>
+        <li><b>Razorpay</b> takes Premium payments. It receives your email address and the payment details you enter, and handles them under its own privacy policy. It tells KidLog only whether a payment or renewal succeeded.</li>
         <li><b>Anthropic</b> provides Claude. What you say to Claude, and what Claude reads from KidLog on your behalf, is handled under Anthropic's own terms and privacy policy for your Claude account. KidLog does not control that.</li>
       </ul>
       <p>We share your information with no one else, unless the law requires it.</p>
@@ -751,6 +867,15 @@ export function privacy({ user, supportEmail }) {
         <li>Edit or delete any entry or appointment in the app at any time.</li>
         <li>Turn off a doctor link, cancel an invite, remove a parent, disconnect Claude, or stop reminder emails at any time.</li>
         <li>To get a copy of your information, or to have your account and your family's information deleted, write to ${contact}. We will act on it within 30 days.</li>
+      </ul>
+
+      <h2>Payments, cancelling and refunds</h2>
+      <ul>
+        <li>Premium costs ${esc(PRICES.monthly.price)} or ${esc(PRICES.yearly.price)}. It renews automatically at the end of each period until you cancel.</li>
+        <li>You can cancel at any time on the plan page. No further payments are taken, and your family returns to the Free plan straight away.</li>
+        <li><b>Full refund within ${REFUND_DAYS} days.</b> If you cancel within ${REFUND_DAYS} days of starting Premium, we refund your payment in full. To ask for it, cancel on the plan page and write to ${contact}. Refunds go back to the payment method you used.</li>
+        <li>After ${REFUND_DAYS} days, payments already made are not refunded.</li>
+        <li>Cancelling or going back to Free never deletes your records. Records older than ${FREE.viewDays} days are locked again and unlock if you return to Premium.</li>
       </ul>
 
       <h2>Security</h2>
@@ -798,13 +923,13 @@ export function share({ space, base, children, shares, preselect = '', fresh, er
   });
 }
 
-export function doctorView({ space, token, lock = {}, all, entries, children, child, flagged, range }) {
+export function doctorView({ space, token, lock = {}, all, entries, children, child, flagged, range, premium, olderTypes }) {
   const scope = `${lock.child ? esc(lock.child) : 'All children'}${lock.flaggedOnly ? ' · flagged entries only' : ''}`;
   return page({
     title: `${lock.child || space.name} · health timeline`,
     nav: `<nav><a class="on">Read-only view for the doctor · ${scope}</a></nav>`,
     wide: true,
-    body: board({ space, base: `/d/${esc(token)}`, all, entries, children, child: lock.child || child, flagged: lock.flaggedOnly ? false : flagged, range, readOnly: true, lock }),
+    body: board({ space, base: `/d/${esc(token)}`, all, entries, children, child: lock.child || child, flagged: lock.flaggedOnly ? false : flagged, range, readOnly: true, lock, premium, olderTypes }),
   });
 }
 
@@ -865,8 +990,9 @@ export function appointmentForm({ space, appt, error, isNew, children }) {
   });
 }
 
-export function kids({ space, children, error, draft = {}, first }) {
+export function kids({ space, children, error, draft = {}, first, upgraded }) {
   const base = `/f/${esc(space.key)}`;
+  const atLimit = !isPremium(space) && children.length >= FREE.children;
   const rows = children.map((c) => `<div class="kid">
       <span class="mini big">${initial(c.child)}</span>
       <div class="kinfo"><b>${esc(c.child)}</b><span>${c.dob ? esc(ageLabel(c.dob)) : 'Birth date not set'} · ${c.entries} ${c.entries === 1 ? 'entry' : 'entries'}</span></div>
@@ -881,15 +1007,20 @@ export function kids({ space, children, error, draft = {}, first }) {
       <p class="lead">Each child has their own timeline and vaccine schedule. The birth date is needed for both.</p>
       ${first ? '<p class="note">Add your child here first, then you can log entries and appointments.</p>' : ''}
       ${rows || '<div class="card empty">No children yet. Add your first below.</div>'}
+      ${upgraded ? '<p class="note good"><b>Payment successful.</b> Your family is on Premium. Add as many children as you need.</p>' : ''}
       <h2>Add a child</h2>
       ${error ? `<div class="err">${esc(error)}</div>` : ''}
-      <form method="post" action="${base}/kids" class="card">
+      ${atLimit ? `<div class="card"><b>The Free plan includes ${FREE.children} child profile</b>
+          <p style="margin:4px 0 12px">Upgrade to Premium to add ${esc(children[0].child)}'s brothers and sisters.</p>
+          <a class="btn" href="${base}/upgrade?reason=child" data-paywall="child">Add another child</a></div>
+        ${paywall({ space, reason: 'child' })}`
+      : `<form method="post" action="${base}/kids" class="card">
         <div class="two">
           <div><label for="name" style="margin-top:0">First name</label><input id="name" type="text" name="name" value="${esc(draft.name || '')}" required maxlength="60"></div>
           <div><label for="dob" style="margin-top:0">Birth date</label><input id="dob" type="date" name="dob" value="${esc(draft.dob || '')}" required></div>
         </div>
         <div class="row" style="margin-top:16px"><button class="btn">Add child</button></div>
-      </form>`,
+      </form>`}`,
   });
 }
 
