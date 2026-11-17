@@ -38,6 +38,10 @@ export function init() {
         expires_at TIMESTAMPTZ NOT NULL
       );
       ALTER TABLE spaces ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id);
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS plan_period TEXT;
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS premium_since TIMESTAMPTZ;
+      ALTER TABLE spaces ADD COLUMN IF NOT EXISTS razorpay_subscription_id TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS spaces_owner_idx ON spaces(owner_id) WHERE owner_id IS NOT NULL;
       CREATE TABLE IF NOT EXISTS space_members (
         user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -417,8 +421,56 @@ export function requireDob(v) {
   return !r.error && r.value === null ? { error: 'The birth date is required. It is used for age and for the vaccine schedule.' } : r;
 }
 
+// ---- Plans: Free and Premium (per family) ----
+// Free: one child profile, and the last 90 days of records on view. Records from days 91 to 100 show as locked;
+// anything older is kept in the database but not shown. Premium has no limits. Nothing is ever deleted by a plan.
+export const FREE = { children: 1, viewDays: 90, storeDays: 100 };
+export const PRICES = { monthly: { label: 'Monthly', price: '₹99 per month' }, yearly: { label: 'Yearly', price: '₹999 per year' } };
+export const isPremium = (space) => space?.plan === 'premium';
+
+export class PlanLimitError extends Error {
+  constructor() { super('The Free plan includes one child profile.'); this.code = 'child_limit'; }
+}
+
+// Oldest date-time still inside the last `days` days, as local text. One spare day so "today" in any timezone counts.
+export const historyCutoff = (days) => new Date(Date.now() - (days + 1) * 86400000).toISOString().slice(0, 16);
+// True when the Free plan keeps this entry locked or hidden.
+export const isLocked = (space, entry) => !isPremium(space) && entry.occurred_at < historyCutoff(FREE.viewDays);
+
+export async function setPlan(spaceId, plan, period = null) {
+  const premium = plan === 'premium';
+  const r = await pool.query(
+    `UPDATE spaces SET plan = $1, plan_period = $2,
+       premium_since = CASE WHEN $1 = 'premium' THEN coalesce(premium_since, now()) ELSE NULL END,
+       razorpay_subscription_id = CASE WHEN $1 = 'premium' THEN razorpay_subscription_id ELSE NULL END
+     WHERE id = $3 RETURNING *`,
+    [premium ? 'premium' : 'free', premium ? (PRICES[period] ? period : 'monthly') : null, spaceId]
+  );
+  return r.rows[0];
+}
+
+// The Razorpay subscription a family is paying, or is in the middle of paying, for.
+export async function setSubscription(spaceId, subscriptionId) {
+  await pool.query('UPDATE spaces SET razorpay_subscription_id = $1 WHERE id = $2', [subscriptionId, spaceId]);
+}
+
+export async function spaceBySubscription(subscriptionId) {
+  await init();
+  const r = await pool.query('SELECT * FROM spaces WHERE razorpay_subscription_id = $1', [String(subscriptionId)]);
+  return r.rows[0];
+}
+
 // Finds the child's profile by name (any capitalisation), creating it if new. Returns the saved spelling.
 async function canonicalChild(spaceId, child) {
+  // Free plan: a new name is refused once the family has its one child. Existing names always pass.
+  const lim = await pool.query(
+    `SELECT s.plan, (SELECT count(*)::int FROM children c WHERE c.space_id = s.id) AS n,
+            EXISTS (SELECT 1 FROM children c WHERE c.space_id = s.id AND lower(c.name) = lower($2)) AS known
+     FROM spaces s WHERE s.id = $1`,
+    [spaceId, child]
+  );
+  const row = lim.rows[0];
+  if (row && row.plan !== 'premium' && !row.known && row.n >= FREE.children) throw new PlanLimitError();
   const r = await pool.query(
     `INSERT INTO children (space_id, name) VALUES ($1, $2)
      ON CONFLICT (space_id, lower(name)) DO UPDATE SET name = children.name RETURNING name`,
