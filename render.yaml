@@ -22,6 +22,14 @@ services:
         sync: false
       - key: SUPPORT_EMAIL
         sync: false
+      # Vaccine reminder emails (optional). Render has no built-in daily job: call /cron/vaccine-reminders once a day
+      # from a Render Cron Job with the header "Authorization: Bearer <CRON_SECRET>".
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: CRON_SECRET
+        sync: false
 databases:
   - name: kidlog-db
     plan: free

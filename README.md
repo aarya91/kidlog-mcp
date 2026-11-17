@@ -58,6 +58,8 @@ Claude saves it as a dated entry, and it appears on the timeline within a few se
 | You want to | Say something like |
 |---|---|
 | Add your children | "Add my kids to KidLog. Vedant was born on 14 August 2024 and Jay on 22 June 2022." |
+| Check vaccines | "Which vaccines are due for Vedant?" |
+| Record vaccines | "Vedant had his 6-week vaccines today." |
 | Log a symptom | "Jay had a stomach ache at 7:30 this morning, no fever. Fine by 9." |
 | Log medicine and temperature | "Gave Vedant 5 ml paracetamol at 8 AM. Temperature was 100.2 F before." |
 | Log a doctor visit or vaccine | "Vedant had his check-up on 3 November. Weight 12.4 kg, height 88 cm." |
@@ -78,7 +80,7 @@ Every entry has an **Edit entry** button. Change the time, the wording, the temp
 
 Use the buttons above the timeline: **All children**, then one per child. **Flagged only** shows just the entries marked for the doctor, and the period menu narrows the list to the last 7, 30 or 90 days.
 
-Manage names and birth dates on the **Children** page. The birth date is used to show the child's age.
+Manage names and birth dates on the **Children** page. Every child needs a birth date: it is used for the child's age and for vaccine due dates. Add a child there before logging entries or appointments for them.
 
 ![The Children page](docs/screenshots/children.png)
 
@@ -87,6 +89,22 @@ Manage names and birth dates on the **Children** page. The birth date is used to
 The **Upcoming appointments** card sits at the top of the right-hand panel. It shows the next doctor or vaccine appointment for the child you are viewing, with its date, time and notes, and how soon it is ("Tomorrow", "2 days to go"). Click **View details** to edit it, **Add appointment** to add as many as you need, or **View all** for the full list.
 
 ![The appointments list](docs/screenshots/appointments.png)
+
+### Track vaccines
+
+Open **Vaccines** and choose a schedule for each child:
+
+- **Government schedule:** the National Immunization Schedule, given free at government health centres.
+- **IAP schedule:** the Indian Academy of Pediatrics schedule, which many private paediatricians follow and which includes more vaccines.
+
+KidLog works out each due date from the child's birth date and marks every visit as given, due now, due soon, overdue or upcoming. Tick the doses that were given and add the date; they are also added to the timeline. The **Next vaccines** card beside the timeline shows what is due next.
+
+**Always confirm with your paediatrician.** The page shows a published standard schedule, not medical advice. Your doctor may advise different vaccines or dates, and an overdue dose needs their advice on catching up.
+
+Two ways to be reminded:
+
+- **Add to calendar** downloads the visits still to come into your phone or computer calendar, with a reminder a week before and on the day. Download it again if the birth date or schedule changes.
+- **Email me reminders** sends one email a week before each visit and one on the day. Each parent turns this on for themselves and can turn it off on the same page.
 
 ### Invite the other parent
 
@@ -173,7 +191,7 @@ KidLog is its own OAuth authorization server. The parent signs in with their Kid
 | Tokens | `/token`; access tokens last 1 hour, refresh tokens 90 days and are replaced on every use; `/revoke` is supported |
 | Storage | Only SHA-256 hashes of codes and tokens are stored |
 
-Tool annotations: the three read tools are `readOnlyHint: true`. `update_event` and `save_child_profile` can replace saved values and are `destructiveHint: true`. `log_event` and `add_appointment` only add rows and are `destructiveHint: false`. No tool deletes anything.
+Tool annotations: the four read tools are `readOnlyHint: true`. `update_event` and `save_child_profile` can replace saved values and are `destructiveHint: true`. `log_event`, `add_appointment` and `record_vaccine_doses` only add rows and are `destructiveHint: false`. No tool deletes anything.
 
 ### Tools
 
@@ -183,7 +201,9 @@ Tool annotations: the three read tools are `readOnlyHint: true`. `update_event` 
 | `get_timeline` | Read entries, with optional child, date range and flagged-only filters |
 | `update_event` | Correct fields of an existing entry |
 | `list_children` | List children with birth date, age and entry counts |
-| `save_child_profile` | Add a child or set a birth date |
+| `save_child_profile` | Add a child with their birth date, or change a birth date |
+| `get_vaccine_schedule` | Read a child's vaccine schedule: visits, due dates, status and doses given |
+| `record_vaccine_doses` | Mark doses on the schedule as given |
 | `add_appointment` | Save an upcoming doctor or vaccine appointment |
 | `list_appointments` | List appointments, soonest first |
 
@@ -200,6 +220,8 @@ The server's instructions tell Claude to record only what the parent said, to ad
 | `/f/<key>` | Timeline (query: `child`, `flagged=1`, `range=7|30|90`). All `/f/` pages need a parent of that family to be signed in |
 | `/f/<key>/e/<id>` | Edit an entry; `/new` adds one |
 | `/f/<key>/kids` | Child profiles |
+| `/f/<key>/vaccines/<child id>` | Vaccine schedule and record. `POST /schedule` chooses the schedule, `/given` and `/undo` record doses, `/emails` turns reminder emails on or off, `GET /calendar.ics` downloads the calendar file |
+| `/cron/vaccine-reminders` | Daily reminder emails. Called by Vercel's scheduler; needs `Authorization: Bearer <CRON_SECRET>` |
 | `/f/<key>/parents` | Parents with access; create or cancel the invite link, remove a parent |
 | `/join/<token>` | Invite link: sign in and join the family |
 | `/f/<key>/appointments` | Appointments list, add and edit |
@@ -214,19 +236,30 @@ The server's instructions tell Claude to record only what the parent said, to ad
 
 | Table | Holds |
 |---|---|
-| `users` | One row per Google account: Google id, email, name |
+| `users` | One row per Google account: Google id, email, name, and whether they want vaccine reminder emails |
 | `sessions` | Signed-in browsers: hash of the cookie token, user, expiry (30 days) |
 | `oauth_clients` | Apps registered to connect (Claude registers itself); unused ones are cleared after 30 days |
 | `oauth_grants` | Connector sign-in records: pending approvals, one-time codes, access and refresh tokens, all as hashes with an expiry |
 | `spaces` | One row per family: private key, name, the account that created it |
 | `space_members` | Which accounts can open which family; one family per account |
 | `invites` | Pending invite link per family: token, expiry (7 days); deleted when used |
-| `children` | Name and birth date, unique per family |
+| `children` | Name, birth date and chosen vaccine schedule, unique per family |
+| `vaccine_doses` | Doses marked as given: child, schedule, dose id, date (may be empty) |
+| `vaccine_reminders` | Which reminder emails have been sent, so none is sent twice |
 | `entries` | Health events: child, time, category, title, details, temperature, flag, source |
 | `appointments` | Upcoming visits: child, type, time, title, notes |
 | `shares` | Doctor links: token, child (or all), flagged-only setting |
 
 A family created before sign-in existed has no owner. The first person to open its `/f/<key>` link and sign in becomes the owner. Families created with the first version of sign-in get their owner added to `space_members` automatically.
+
+### Vaccine schedules
+
+`vaccines.js` holds both schedules as data, with the source of each, and works out due dates and statuses. Nothing is stored about a schedule except the parent's choice and the doses given.
+
+- **Sources:** the government schedule follows the Universal Immunisation Programme table in the Press Information Bureau note of 17 March 2026. The IAP schedule follows the ACVIP 2023 recommendations in *Indian Pediatrics*, 15 February 2024. **Have a paediatrician review `vaccines.js` before changing it**, and update the tables when either body publishes a new schedule.
+- **Dose ids are permanent.** Saved records refer to ids such as `6w.penta1`, so rename a label freely but never reuse or change an id.
+- **Statuses:** a visit is due soon from 14 days before its date, due from that date, and overdue after its age range ends (or 28 days after a single date). KidLog does not compute catch-up schedules.
+- **Reminder emails:** `vercel.json` schedules `/cron/vaccine-reminders` once a day at 02:30 UTC (08:00 in India; Vercel's Hobby plan may run it up to an hour later). It emails parents who opted in, a week before a visit and on the day, through Resend. `REMINDER_TZ` sets whose "today" is used.
 
 Dates and times are stored as local text (`YYYY-MM-DDTHH:MM`) exactly as the parent gave them, with no timezone conversion.
 
@@ -258,6 +291,10 @@ Then open http://localhost:3000.
 | `GOOGLE_CLIENT_SECRET` | Yes | OAuth client secret from Google |
 | `PUBLIC_URL` | Yes in production | Public https address of the site, e.g. `https://kidlog-mcp.vercel.app`. Used in generated links, the Google redirect address and the connector's sign-in addresses |
 | `SUPPORT_EMAIL` | Yes in production | Contact address shown in the privacy policy |
+| `RESEND_API_KEY` | For reminder emails | API key from resend.com |
+| `EMAIL_FROM` | For reminder emails | Sender, on a domain verified in Resend, e.g. `KidLog <reminders@yourdomain.com>` |
+| `CRON_SECRET` | For reminder emails | A random string of 16 or more characters. Vercel sends it with the daily job, and KidLog refuses the job without it |
+| `REMINDER_TZ` | No | Time zone used to decide today's date for reminders; defaults to `Asia/Kolkata` |
 
 ## Deploy
 
@@ -280,6 +317,9 @@ Then open http://localhost:3000.
 | `app.js` | Express routes for all pages |
 | `auth.js` | Google sign-in, sign-out and the session cookie |
 | `oauth.js` | Sign-in for the Claude connector: approval step and token rules |
+| `vaccines.js` | The two vaccine schedules, due-date and status rules, and the calendar file |
+| `vaccine-jobs.js` | Recording doses as given, and the daily reminder emails |
+| `mail.js` | Sends email through Resend |
 | `mcp.js` | The MCP endpoint, tool definitions and instructions to Claude |
 | `db.js` | Tables, queries and input validation |
 | `views.js` | HTML pages and CSS |

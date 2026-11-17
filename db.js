@@ -96,6 +96,25 @@ export function init() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
       CREATE UNIQUE INDEX IF NOT EXISTS children_name_idx ON children(space_id, lower(name));
+      ALTER TABLE children ADD COLUMN IF NOT EXISTS vaccine_schedule TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS vaccine_emails BOOLEAN NOT NULL DEFAULT false;
+      CREATE TABLE IF NOT EXISTS vaccine_doses (
+        child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+        schedule TEXT NOT NULL,
+        dose_id TEXT NOT NULL,
+        given_on TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (child_id, schedule, dose_id)
+      );
+      CREATE TABLE IF NOT EXISTS vaccine_reminders (
+        child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+        schedule TEXT NOT NULL,
+        visit_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (child_id, schedule, visit_id, kind, user_id)
+      );
       INSERT INTO children (space_id, name)
         SELECT space_id, min(child) FROM entries GROUP BY space_id, lower(child)
         ON CONFLICT (space_id, lower(name)) DO NOTHING;
@@ -166,7 +185,7 @@ export async function createSession(userId, days) {
 export async function userBySession(t) {
   await init();
   const r = await pool.query(
-    'SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > now()',
+    'SELECT u.id, u.email, u.name, u.vaccine_emails FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > now()',
     [hash(t)]
   );
   return r.rows[0];
@@ -392,6 +411,12 @@ export function validateDob(v) {
   return { value: t };
 }
 
+// The same check, for forms where the birth date must be filled in.
+export function requireDob(v) {
+  const r = validateDob(v);
+  return !r.error && r.value === null ? { error: 'The birth date is required. It is used for age and for the vaccine schedule.' } : r;
+}
+
 // Finds the child's profile by name (any capitalisation), creating it if new. Returns the saved spelling.
 async function canonicalChild(spaceId, child) {
   const r = await pool.query(
@@ -405,7 +430,7 @@ async function canonicalChild(spaceId, child) {
 export async function getChild(spaceId, id) {
   const n = Number(id);
   if (!Number.isInteger(n)) return undefined;
-  const r = await pool.query('SELECT id, name AS child, dob FROM children WHERE space_id = $1 AND id = $2', [spaceId, n]);
+  const r = await pool.query('SELECT id, name AS child, dob, vaccine_schedule FROM children WHERE space_id = $1 AND id = $2', [spaceId, n]);
   return r.rows[0];
 }
 
@@ -433,6 +458,12 @@ export async function saveChild(spaceId, { id, name, dob }) {
       }
       const keepDob = dob || target.dob || current.dob;
       await client.query('UPDATE children SET dob = $1 WHERE id = $2', [keepDob, target.id]);
+      // Keep the vaccine record of the child being merged in, wherever the other profile has no record of that dose.
+      await client.query(
+        `INSERT INTO vaccine_doses (child_id, schedule, dose_id, given_on)
+         SELECT $1, schedule, dose_id, given_on FROM vaccine_doses WHERE child_id = $2 ON CONFLICT DO NOTHING`,
+        [target.id, current.id]
+      );
       await client.query('DELETE FROM children WHERE id = $1', [current.id]);
     } else {
       await client.query('UPDATE entries SET child = $1 WHERE space_id = $2 AND lower(child) = lower($3)', [name, spaceId, current.child]);
@@ -634,12 +665,70 @@ export async function listEntries(spaceId, { child, from, to, flaggedOnly, limit
 
 export async function listChildren(spaceId) {
   const r = await pool.query(
-    `SELECT c.id, c.name AS child, c.dob, count(e.id)::int AS entries, max(e.occurred_at) AS latest
+    `SELECT c.id, c.name AS child, c.dob, c.vaccine_schedule, count(e.id)::int AS entries, max(e.occurred_at) AS latest
      FROM children c LEFT JOIN entries e ON e.space_id = c.space_id AND lower(e.child) = lower(c.name)
      WHERE c.space_id = $1 GROUP BY c.id ORDER BY c.id`,
     [spaceId]
   );
   return r.rows;
+}
+
+// ---- Vaccines ----
+export async function setVaccineSchedule(spaceId, childId, schedule) {
+  await pool.query('UPDATE children SET vaccine_schedule = $1 WHERE space_id = $2 AND id = $3', [schedule, spaceId, childId]);
+}
+
+// Doses recorded as given for one child and schedule: { dose id: { given_on } }. given_on is null when the date was not known.
+export async function givenDoses(childId, schedule) {
+  const r = await pool.query('SELECT dose_id, given_on FROM vaccine_doses WHERE child_id = $1 AND schedule = $2', [childId, schedule]);
+  return Object.fromEntries(r.rows.map((d) => [d.dose_id, { given_on: d.given_on }]));
+}
+
+export async function markDoses(childId, schedule, doseIds, givenOn) {
+  for (const id of doseIds) {
+    await pool.query(
+      `INSERT INTO vaccine_doses (child_id, schedule, dose_id, given_on) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (child_id, schedule, dose_id) DO UPDATE SET given_on = coalesce(EXCLUDED.given_on, vaccine_doses.given_on)`,
+      [childId, schedule, id, givenOn || null]
+    );
+  }
+}
+
+export async function unmarkDose(childId, schedule, doseId) {
+  await pool.query('DELETE FROM vaccine_doses WHERE child_id = $1 AND schedule = $2 AND dose_id = $3', [childId, schedule, String(doseId)]);
+}
+
+export async function setVaccineEmails(userId, on) {
+  await pool.query('UPDATE users SET vaccine_emails = $1 WHERE id = $2', [!!on, userId]);
+}
+
+// Every (child, parent) pair that could be due a reminder email: the child has a birth date and a chosen
+// schedule, and that parent has turned email reminders on.
+export async function reminderTargets() {
+  await init();
+  const r = await pool.query(
+    `SELECT c.id AS child_id, c.name AS child, c.dob, c.vaccine_schedule AS schedule, s.key AS space_key,
+            u.id AS user_id, u.email, u.name AS parent
+     FROM children c JOIN spaces s ON s.id = c.space_id
+       JOIN space_members m ON m.space_id = s.id JOIN users u ON u.id = m.user_id
+     WHERE c.dob IS NOT NULL AND c.vaccine_schedule IS NOT NULL AND u.vaccine_emails
+     ORDER BY c.id, u.id`
+  );
+  return r.rows;
+}
+
+// Records that a reminder is being sent. False means this exact reminder already went out, so it is not repeated.
+export async function claimReminder(t, visitId, kind) {
+  const r = await pool.query(
+    'INSERT INTO vaccine_reminders (child_id, schedule, visit_id, kind, user_id) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
+    [t.child_id, t.schedule, visitId, kind, t.user_id]
+  );
+  return r.rowCount === 1;
+}
+
+// The email could not be sent: forget the claim so the next daily run tries again.
+export async function releaseReminder(t, visitId, kind) {
+  await pool.query('DELETE FROM vaccine_reminders WHERE child_id = $1 AND schedule = $2 AND visit_id = $3 AND kind = $4 AND user_id = $5', [t.child_id, t.schedule, visitId, kind, t.user_id]);
 }
 
 // "2 years, 3 months" from a YYYY-MM-DD birth date. Empty string when unknown.
