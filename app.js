@@ -6,6 +6,9 @@ import * as views from './views.js';
 import { handleMcp } from './mcp.js';
 import * as auth from './auth.js';
 import * as oauth from './oauth.js';
+import * as mail from './mail.js';
+import { SCHEDULES, SCHEDULE_IDS, childSchedule, nextVisit, calendarFile } from './vaccines.js';
+import { recordDoses, sendReminders } from './vaccine-jobs.js';
 
 const app = express();
 app.set('trust proxy', true);
@@ -54,6 +57,14 @@ async function boardData(spaceId, query, lock = {}) {
 }
 
 app.get('/healthz', wrap(async (req, res) => { await db.init(); res.send('ok'); }));
+
+// ---- Daily vaccine reminder emails ----
+// Vercel calls this once a day (see vercel.json) and sends CRON_SECRET with it. Nobody else may trigger it.
+app.get('/cron/vaccine-reminders', wrap(async (req, res) => {
+  const secret = (process.env.CRON_SECRET || '').trim();
+  if (!secret || req.get('authorization') !== `Bearer ${secret}`) return res.status(401).send('unauthorized');
+  res.json(await sendReminders(baseUrl(req)));
+}));
 
 // ---- Sign-in ----
 app.use(wrap(auth.loadUser)); // sets req.user for every page below
@@ -134,7 +145,16 @@ app.get('/f/:key', withSpace, wrap(async (req, res) => {
   const [data, stamp] = await Promise.all([boardData(req.space.id, req.query), db.stamp(req.space.id)]);
   const now = localNow(req);
   const upcoming = await db.listAppointments(req.space.id, { child: data.child, from: now });
-  res.send(views.timeline({ space: req.space, ...data, upcoming, now, stamp, welcome: req.query.welcome === '1' }));
+  // Right-panel vaccine card: the soonest visit still to be given, among the children on view.
+  const inView = data.children.filter((c) => !data.child || c.child.toLowerCase() === data.child.toLowerCase());
+  let vaccine = null;
+  for (const c of inView) {
+    if (!c.dob || !SCHEDULES[c.vaccine_schedule]) { vaccine ??= { child: c, setup: true }; continue; }
+    const next = nextVisit(childSchedule(c.vaccine_schedule, c.dob, await db.givenDoses(c.id, c.vaccine_schedule), now.slice(0, 10)));
+    if (next && (!vaccine || vaccine.setup || next.from < vaccine.visit.from)) vaccine = { child: c, visit: next };
+    else if (!next && !vaccine) vaccine = { child: c, done: true };
+  }
+  res.send(views.timeline({ space: req.space, ...data, upcoming, vaccine, now, stamp, welcome: req.query.welcome === '1' }));
 }));
 
 app.get('/f/:key/stamp', withSpace, wrap(async (req, res) => res.type('text').send(await db.stamp(req.space.id))));
@@ -191,6 +211,10 @@ app.post('/f/:key/share/:id/delete', withSpace, wrap(async (req, res) => {
   res.redirect(303, `/f/${req.space.key}/share`);
 }));
 
+// Forms may only name a child who already has a profile, so that every child is added with a birth date.
+const NEW_CHILD = 'Add this child on the Children page first, with their birth date.';
+const unknownChild = async (spaceId, name) => !(await db.listChildren(spaceId)).some((c) => c.child.toLowerCase() === db.clean(name, 60).toLowerCase());
+
 // ---- Appointments ----
 const apptBody = (b) => ({ child: b.child, kind: b.kind, scheduled_at: b.scheduled_at, title: b.title, notes: b.notes ?? '' });
 
@@ -202,6 +226,7 @@ app.get('/f/:key/appointments', withSpace, wrap(async (req, res) => {
 
 app.get('/f/:key/appointments/new', withSpace, wrap(async (req, res) => {
   const children = await db.listChildren(req.space.id);
+  if (!children.length) return res.redirect(303, `/f/${req.space.key}/kids?first=1`);
   const picked = children.find((c) => c.child.toLowerCase() === db.clean(req.query.child, 60).toLowerCase());
   const appt = { child: picked ? picked.child : children.length === 1 ? children[0].child : '', kind: 'doctor', scheduled_at: '', title: '', notes: '' };
   res.send(views.appointmentForm({ space: req.space, appt, isNew: true, children }));
@@ -209,7 +234,8 @@ app.get('/f/:key/appointments/new', withSpace, wrap(async (req, res) => {
 
 app.post('/f/:key/appointments', withSpace, wrap(async (req, res) => {
   const body = apptBody(req.body);
-  const v = db.validateAppointment(body);
+  let v = db.validateAppointment(body);
+  if (!v.error && await unknownChild(req.space.id, body.child)) v = { error: NEW_CHILD };
   if (v.error) {
     return res.status(400).send(views.appointmentForm({
       space: req.space, appt: { ...body, scheduled_at: db.normaliseWhen(body.scheduled_at) || '' }, error: v.error, isNew: true,
@@ -230,7 +256,8 @@ app.post('/f/:key/appointments/:id', withSpace, wrap(async (req, res) => {
   const existing = await db.getAppointment(req.space.id, req.params.id);
   if (!existing) return res.status(404).send(views.notFound('That appointment no longer exists.'));
   const body = apptBody(req.body);
-  const v = db.validateAppointment(body);
+  let v = db.validateAppointment(body);
+  if (!v.error && await unknownChild(req.space.id, body.child)) v = { error: NEW_CHILD };
   if (v.error) {
     return res.status(400).send(views.appointmentForm({
       space: req.space, appt: { ...existing, ...body, scheduled_at: db.normaliseWhen(body.scheduled_at) || existing.scheduled_at },
@@ -248,13 +275,73 @@ app.post('/f/:key/appointments/:id/delete', withSpace, wrap(async (req, res) => 
 
 // ---- Child profiles ----
 app.get('/f/:key/kids', withSpace, wrap(async (req, res) =>
-  res.send(views.kids({ space: req.space, children: await db.listChildren(req.space.id) }))));
+  res.send(views.kids({ space: req.space, children: await db.listChildren(req.space.id), first: req.query.first === '1' }))));
 
 app.post('/f/:key/kids', withSpace, wrap(async (req, res) => {
-  const dob = db.validateDob(req.body.dob);
-  const r = dob.error ? dob : await db.saveChild(req.space.id, { name: req.body.name, dob: dob.value ?? undefined });
+  const dob = db.requireDob(req.body.dob);
+  const r = dob.error ? dob : await db.saveChild(req.space.id, { name: req.body.name, dob: dob.value });
   if (r.error) return res.status(400).send(views.kids({ space: req.space, children: await db.listChildren(req.space.id), error: r.error, draft: req.body }));
   res.redirect(303, `/f/${req.space.key}?child=${encodeURIComponent(r.value)}`);
+}));
+
+// ---- Vaccines: a published schedule next to what has been given ----
+const withChild = wrap(async (req, res, next) => {
+  const child = await db.getChild(req.space.id, req.params.id);
+  if (!child) return res.status(404).send(views.notFound('That child profile no longer exists.'));
+  req.child = child;
+  next();
+});
+const vaccinesUrl = (req, extra = '') => `/f/${req.space.key}/vaccines/${req.child.id}${extra}`;
+
+app.get('/f/:key/vaccines', withSpace, wrap(async (req, res) => {
+  const children = await db.listChildren(req.space.id);
+  res.redirect(303, children.length ? `/f/${req.space.key}/vaccines/${children[0].id}` : `/f/${req.space.key}/kids?first=1`);
+}));
+
+const vaccinesPage = async (req, extra = {}) => {
+  const c = req.child;
+  const today = localNow(req).slice(0, 10);
+  const visits = c.dob && SCHEDULES[c.vaccine_schedule] ? childSchedule(c.vaccine_schedule, c.dob, await db.givenDoses(c.id, c.vaccine_schedule), today) : null;
+  return views.vaccines({
+    space: req.space, child: c, children: await db.listChildren(req.space.id), visits, today, user: req.user,
+    emailReady: mail.enabled(), changing: req.query.change === '1', ...extra,
+  });
+};
+
+app.get('/f/:key/vaccines/:id', withSpace, withChild, wrap(async (req, res) => res.send(await vaccinesPage(req, { saved: req.query.saved === '1' }))));
+
+app.post('/f/:key/vaccines/:id/schedule', withSpace, withChild, wrap(async (req, res) => {
+  if (!SCHEDULE_IDS.includes(req.body.schedule)) return res.status(400).send(await vaccinesPage(req, { error: 'Choose one of the two schedules.' }));
+  await db.setVaccineSchedule(req.space.id, req.child.id, req.body.schedule);
+  res.redirect(303, vaccinesUrl(req));
+}));
+
+app.post('/f/:key/vaccines/:id/given', withSpace, withChild, wrap(async (req, res) => {
+  const r = await recordDoses({ space: req.space, child: req.child, doseIds: req.body.doses ?? [], givenOn: db.clean(req.body.given_on, 10), source: 'manual', localNow: localNow(req) });
+  if (r.error) return res.status(400).send(await vaccinesPage(req, { error: r.error }));
+  res.redirect(303, vaccinesUrl(req, '?saved=1'));
+}));
+
+app.post('/f/:key/vaccines/:id/undo', withSpace, withChild, wrap(async (req, res) => {
+  if (req.child.vaccine_schedule) await db.unmarkDose(req.child.id, req.child.vaccine_schedule, req.body.dose);
+  res.redirect(303, vaccinesUrl(req));
+}));
+
+// Email reminders are each parent's own choice.
+app.post('/f/:key/vaccines/:id/emails', withSpace, withChild, wrap(async (req, res) => {
+  await db.setVaccineEmails(req.user.id, req.body.on === '1');
+  res.redirect(303, vaccinesUrl(req));
+}));
+
+// A calendar file of the visits still to come, for the parent's own phone or computer calendar.
+app.get('/f/:key/vaccines/:id/calendar.ics', withSpace, withChild, wrap(async (req, res) => {
+  const c = req.child;
+  if (!c.dob || !SCHEDULES[c.vaccine_schedule]) return res.redirect(303, vaccinesUrl(req));
+  const today = localNow(req).slice(0, 10);
+  const visits = childSchedule(c.vaccine_schedule, c.dob, await db.givenDoses(c.id, c.vaccine_schedule), today);
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="kidlog-vaccines-${c.id}.ics"`);
+  res.send(calendarFile({ child: c, scheduleId: c.vaccine_schedule, visits, today, url: `${baseUrl(req)}${vaccinesUrl(req)}` }));
 }));
 
 app.get('/f/:key/kids/:id', withSpace, wrap(async (req, res) => {
@@ -266,7 +353,7 @@ app.get('/f/:key/kids/:id', withSpace, wrap(async (req, res) => {
 app.post('/f/:key/kids/:id', withSpace, wrap(async (req, res) => {
   const kid = (await db.listChildren(req.space.id)).find((c) => String(c.id) === req.params.id);
   if (!kid) return res.status(404).send(views.notFound('That child profile no longer exists.'));
-  const dob = db.validateDob(req.body.dob);
+  const dob = db.requireDob(req.body.dob);
   const r = dob.error ? dob : await db.saveChild(req.space.id, { id: kid.id, name: req.body.name, dob: dob.value });
   if (r.error) return res.status(400).send(views.kidForm({ space: req.space, kid: { ...kid, child: req.body.name ?? kid.child, dob: req.body.dob ?? kid.dob }, error: r.error }));
   res.redirect(303, `/f/${req.space.key}?child=${encodeURIComponent(r.value)}`);
@@ -279,6 +366,7 @@ app.post('/f/:key/kids/:id/delete', withSpace, wrap(async (req, res) => {
 
 app.get('/f/:key/new', withSpace, wrap(async (req, res) => {
   const children = await db.listChildren(req.space.id);
+  if (!children.length) return res.redirect(303, `/f/${req.space.key}/kids?first=1`);
   const picked = children.find((c) => c.child.toLowerCase() === db.clean(req.query.child, 60).toLowerCase());
   const entry = { child: picked ? picked.child : children.length === 1 ? children[0].child : '', occurred_at: '', category: 'symptom', title: '', details: '', temperature: '', flagged: false };
   res.send(views.entryForm({ space: req.space, entry, isNew: true, children }));
@@ -286,7 +374,8 @@ app.get('/f/:key/new', withSpace, wrap(async (req, res) => {
 
 app.post('/f/:key/entries', withSpace, wrap(async (req, res) => {
   const body = { ...req.body, details: req.body.details ?? '', temperature: req.body.temperature ?? '', flagged: req.body.flagged === 'on' };
-  const v = db.validateEntry(body);
+  let v = db.validateEntry(body);
+  if (!v.error && await unknownChild(req.space.id, body.child)) v = { error: NEW_CHILD };
   if (v.error) {
     const children = await db.listChildren(req.space.id);
     return res.status(400).send(views.entryForm({ space: req.space, entry: { ...body, occurred_at: db.normaliseWhen(body.occurred_at) || '' }, error: v.error, isNew: true, children }));
@@ -305,7 +394,8 @@ app.post('/f/:key/e/:id', withSpace, wrap(async (req, res) => {
   const existing = await db.getEntry(req.space.id, req.params.id);
   if (!existing) return res.status(404).send(views.notFound('That entry no longer exists.'));
   const body = { ...req.body, details: req.body.details ?? '', temperature: req.body.temperature ?? '', flagged: req.body.flagged === 'on' };
-  const v = db.validateEntry(body);
+  let v = db.validateEntry(body);
+  if (!v.error && await unknownChild(req.space.id, body.child)) v = { error: NEW_CHILD };
   if (v.error) {
     return res.status(400).send(views.entryForm({
       space: req.space, entry: { ...existing, ...body, occurred_at: db.normaliseWhen(body.occurred_at) || existing.occurred_at },

@@ -1,5 +1,6 @@
 // Server-rendered HTML. No frameworks, no AI.
 import { CATEGORIES, ageLabel } from './db.js';
+import { SCHEDULES, SCHEDULE_IDS, DISCLAIMER } from './vaccines.js';
 
 export const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -171,6 +172,29 @@ ol.hows{list-style:none;padding:0;margin:26px 0 8px}
 body.homebg{background:radial-gradient(900px 500px at 78% -10%,#ebe8fb 0,transparent 60%),radial-gradient(700px 420px at -5% 105%,#ebe8fb 0,transparent 60%),var(--bg)}
 @media(max-width:900px){.home{grid-template-columns:1fr;gap:32px;padding-top:26px}.pitch h1{font-size:40px}.pitch .lead{font-size:18px}}
 @media(max-width:620px){.pitch h1{font-size:33px}.demo .saved{grid-template-columns:1fr}.perk{padding:8px 16px 8px 0;border-left:0}.signin{padding:30px 22px 24px}.signin h2{font-size:28px}}
+.side.vax{background:#fbecd7}.side.vax .next{display:flex;gap:12px;align-items:flex-start;margin:10px 0 8px}
+.side.vax .next b{display:block;font-size:16px;line-height:1.3}.side.vax .next div span{display:block;font-size:14.5px;color:#3d3a66}
+.side.vax .next .ico{width:36px;height:36px}.side.vax .next .ico svg{width:19px;height:19px}.side.vax .next .nnote{color:var(--muted);margin-top:4px;font-size:13.5px}
+.tiny{font-size:13.5px;color:var(--muted);margin:8px 0 10px}hr.soft{border:0;border-top:1px solid var(--line);margin:14px 0}
+.vstat{display:inline-block!important;width:fit-content;border-radius:999px;padding:1px 10px;font-size:12.5px!important;font-weight:700;margin-top:3px;background:#eeedf3;color:#55546b!important}
+.vstat.s-given{background:#dff3e8;color:#1f7a4d!important}.vstat.s-due{background:#e1e9fa;color:#2c55a8!important}.vstat.s-soon{background:#fbecd7;color:#9a5f14!important}
+.vstat.s-overdue{background:#fde3df;color:#b93a26!important}.vstat.s-partly{background:#ebe5fb;color:#5a3fb5!important}
+.warn{background:#fdf1d8;border:1px solid #efd08d;border-radius:12px;padding:12px 16px;color:#5c4308;font-size:15px}
+.vvisit{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:10px 0}
+.vvisit.s-due{border-color:#9db6ea;box-shadow:inset 4px 0 0 #3b6fd4}.vvisit.s-overdue{border-color:#f0a99b;box-shadow:inset 4px 0 0 #e5533d}.vvisit.s-soon{box-shadow:inset 4px 0 0 #d9892b}
+.vvisit.s-given{background:#f8fcfa}
+.vhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.vhead h3{margin:0;font-size:17.5px}.vhead .vdue{color:var(--muted);font-size:14.5px;margin-right:auto}.vhead .vstat{margin-top:0}
+.vnote{margin:8px 0 0;color:#b93a26;font-size:14.5px}
+ul.doses{list-style:none;margin:10px 0 0;padding:0}ul.doses li{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+ul.doses li:first-child{border-top:0}ul.doses label{display:flex;gap:10px;align-items:flex-start;margin:0;font-weight:400;flex:1}
+ul.doses input{width:18px;height:18px;margin-top:3px}ul.doses b{display:block;font-weight:600}ul.doses small{display:block;color:var(--muted);font-size:13.5px}
+ul.doses li.done span:nth-child(2){flex:1}ul.doses form{margin:0}.dot{width:8px;height:8px;border-radius:50%;background:#cfcce0;margin:8px 5px 0;flex:none}
+.tick{width:18px;height:18px;border-radius:50%;background:#2fa36b;color:#fff;font-size:12px;display:grid;place-items:center;margin-top:3px;flex:none}
+.vgive{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}.vgive label{margin:0}.vgive input[type=date]{width:auto;padding:6px 10px}.vgive small{color:var(--muted);font-size:13.5px}
+.linkbtn{background:none;border:0;padding:0;font:inherit;font-size:14px;color:var(--brand);text-decoration:underline;cursor:pointer}
+.schedopt{display:flex;gap:12px;align-items:flex-start;border:1.5px solid #cfcce0;border-radius:12px;padding:12px 14px;margin:0 0 10px;font-weight:400;cursor:pointer}
+.schedopt:has(input:checked){border-color:var(--brand);background:var(--soft)}.schedopt input{margin-top:5px}.schedopt b{display:block}.schedopt small{display:block;color:var(--muted);font-size:13.5px;margin-top:2px}
+.note.good{background:#e3f6ee;color:#17603f}
 @media print{header.top,.noprint{display:none!important}body{background:#fff}.card{break-inside:avoid}}
 `;
 
@@ -187,7 +211,7 @@ function page({ title, nav = '', body, head = '', wide = false, bodyClass = '' }
 <style>${CSS}</style>${head}
 <script>try{document.cookie='tz='+(-new Date().getTimezoneOffset())+';path=/;max-age=31536000;samesite=lax'}catch(e){}</script>
 </head><body${bodyClass ? ` class="${bodyClass}"` : ''}>
-<header class="top"><div class="wrap${wide ? ' wide' : ''}"><a class="logo" href="/">${LOGO}</a>${nav}</div></header>
+<header class="top"><div class="wrap wide"><a class="logo" href="/">${LOGO}</a>${nav}</div></header>
 <main class="wrap${wide ? ' wide' : ''}">${body}
 <footer>KidLog records what you tell it so you can show your doctor. It does not give medical advice. If you are worried about your child, contact your doctor.
 <span class="flinks noprint"><a href="/how-it-works">How it works</a> · <a href="/privacy">Privacy</a></span></footer>
@@ -197,7 +221,7 @@ function page({ title, nav = '', body, head = '', wide = false, bodyClass = '' }
 function spaceNav(space, on) {
   const b = `/f/${esc(space.key)}`;
   const a = (href, id, label) => `<a href="${href}"${on === id ? ' class="on" aria-current="page"' : ''}>${label}</a>`;
-  return `<nav>${a(b, 'timeline', 'Timeline')}${a(b + '/kids', 'kids', 'Children')}${a(b + '/parents', 'parents', 'Parents')}${a(b + '/connect', 'connect', 'Connect Claude')}${a(b + '/share', 'share', 'Share with doctor')}</nav><form method="post" action="/logout" class="noprint" style="margin:0"><button class="btn ghost small">Sign out</button></form>`;
+  return `<nav>${a(b, 'timeline', 'Timeline')}${a(b + '/kids', 'kids', 'Children')}${a(b + '/vaccines', 'vaccines', 'Vaccines')}${a(b + '/parents', 'parents', 'Parents')}${a(b + '/connect', 'connect', 'Connect Claude')}${a(b + '/share', 'share', 'Share with doctor')}</nav><form method="post" action="/logout" class="noprint" style="margin:0"><button class="btn ghost small">Sign out</button></form>`;
 }
 
 const clean = (v) => String(v ?? '').trim().slice(0, 60);
@@ -321,11 +345,32 @@ function upcomingCard({ base, upcoming, shown, now }) {
   </section>`;
 }
 
+const VSTATUS = { given: 'Given', partly: 'Partly given', overdue: 'Overdue', due: 'Due now', soon: 'Due soon', upcoming: 'Upcoming' };
+const dueText = (v) => (v.until ? `${shortDay(v.from).replace(/^\w+, /, '')} to ${shortDay(v.until).replace(/^\w+, /, '')}` : shortDay(v.from));
+
+// Right-panel card: the next vaccines still to be given, or a nudge to set the schedule up.
+function vaccineCard({ base, vaccine, shown }) {
+  if (!vaccine) return '';
+  const c = vaccine.child;
+  const href = `${base}/vaccines/${c.id}`;
+  const who = shown ? '' : ` · ${esc(c.child)}`;
+  const body = vaccine.setup
+    ? `<p>See which vaccines are due and when, for ${esc(c.child)}.</p><a class="btn small" href="${c.dob ? href : `${base}/kids/${c.id}`}">${c.dob ? 'Choose a schedule' : 'Add birth date'}</a>`
+    : vaccine.done
+      ? `<p>Every vaccine on ${esc(c.child)}'s schedule is recorded as given.</p><a class="btn ghost small" href="${href}">View record</a>`
+      : `<div class="next">${icon('vaccine')}<div><b>${esc(vaccine.visit.label)}${who}</b><span>${dueText(vaccine.visit)}</span>
+           <span class="vstat s-${vaccine.visit.status}">${VSTATUS[vaccine.visit.status]}</span>
+           <span class="nnote">${vaccine.visit.pending.map((d) => esc(d.name)).join(' · ')}</span></div></div>
+         <p class="tiny">Standard schedule. Confirm with your paediatrician.</p>
+         <a class="btn small" href="${href}">Open vaccines</a>`;
+  return `<div class="side vax noprint"><h3>Next vaccines</h3>${body}</div>`;
+}
+
 const pickShown = (children, child) =>
   child ? children.find((c) => c.child.toLowerCase() === child.toLowerCase()) : children.length === 1 ? children[0] : null;
 
 // Shared by the family timeline and the read-only doctor view.
-function board({ space, base, all, entries, children, child, flagged, range, readOnly, shareHref, connectHref, lock = {}, upcoming = [], now = '' }) {
+function board({ space, base, all, entries, children, child, flagged, range, readOnly, shareHref, connectHref, lock = {}, upcoming = [], now = '', vaccine = null }) {
   const shown = pickShown(children, child);
   const age = shown ? ageLabel(shown.dob) : '';
   const total = shown && !lock.flaggedOnly ? shown.entries : all.length; // a flagged-only link must not reveal the full count
@@ -371,6 +416,7 @@ function board({ space, base, all, entries, children, child, flagged, range, rea
       </div>
       <aside>
         ${readOnly ? '' : `${upcomingCard({ base, upcoming, shown, now })}
+        ${vaccineCard({ base, vaccine, shown })}
         <div class="side green invite noprint"><span class="pico">${G.people}</span><div><h3>Invite another parent</h3><p>Let your partner or a family member see and add to this timeline.</p><a class="btn small" href="${base}/parents">Invite ${G.arrow}</a></div></div>`}
         <div class="side amber"><h3>Quick overview</h3><p class="sub">${rangeLabel}</p><ul class="counts">
           ${row('symptom', 'Symptom entries', count('symptom'))}
@@ -442,8 +488,9 @@ export function howItWorks({ user } = {}) {
         ${step(3, 'Tell Claude what happened', 'In a chat with KidLog switched on, describe it in your own words. Claude saves one dated entry per event: symptoms, temperatures, medicine doses, feeds, sleep, doctor visits and vaccines. A child is added the first time you mention them.', 'Aarav woke up coughing at 2:15 last night, felt a bit warm but no high fever. Refused his milk and settled around 3. Log this, I want to raise it with the doctor.')}
         ${step(4, 'Check and correct the timeline', 'Each entry appears on the timeline within a few seconds. You can edit the time, wording or temperature of anything Claude wrote, add entries by hand, and flag the ones you want to raise with the doctor.')}
         ${step(5, 'Keep appointments in view', 'Add upcoming doctor and vaccine appointments yourself or by telling Claude. The next one shows beside the timeline with how many days are left.', 'Aarav has a follow-up with the paediatrician on 28 January at 5 PM.')}
-        ${step(6, 'Invite the other parent', 'Create an invite link and send it to your partner or a family member. They sign in with their own Google account and see and add to the same timeline.')}
-        ${step(7, 'Share with your doctor', 'Create a read-only link for one child or all of them, with everything or only the flagged entries. The doctor opens it in any browser, can read and print it, and cannot change anything. You can turn a link off at any time.')}
+        ${step(6, 'Track vaccines', 'Choose the government schedule or the Indian Academy of Pediatrics schedule for each child. KidLog works out the due dates from the birth date, shows what is due next, and lets you tick off what has been given. Add the dates to your calendar or get reminder emails. It is a published standard schedule, so always confirm with your paediatrician.')}
+        ${step(7, 'Invite the other parent', 'Create an invite link and send it to your partner or a family member. They sign in with their own Google account and see and add to the same timeline.')}
+        ${step(8, 'Share with your doctor', 'Create a read-only link for one child or all of them, with everything or only the flagged entries. The doctor opens it in any browser, can read and print it, and cannot change anything. You can turn a link off at any time.')}
       </ol>
       <h2>Good to know</h2>
       <div class="card">
@@ -531,14 +578,14 @@ export function parents({ space, members, invite, base, me, isOwner }) {
   });
 }
 
-export function timeline({ space, all, entries, children, child, flagged, range, upcoming, now, stamp, welcome }) {
+export function timeline({ space, all, entries, children, child, flagged, range, upcoming, vaccine, now, stamp, welcome }) {
   const base = `/f/${esc(space.key)}`;
   return page({
     title: `${space.name} · KidLog`,
     nav: spaceNav(space, 'timeline'),
     wide: true,
     body: `${welcome ? `<p class="note" style="margin-top:20px">Your timeline is ready. Sign in with Google at any time to get back to it. Next,<a href="${base}/connect">connect Claude</a>.</p>` : ''}
-      ${board({ space, base, all, entries, children, child, flagged, range, upcoming, now, readOnly: false, shareHref: `${base}/share`, connectHref: `${base}/connect` })}
+      ${board({ space, base, all, entries, children, child, flagged, range, upcoming, vaccine, now, readOnly: false, shareHref: `${base}/share`, connectHref: `${base}/connect` })}
       <script>
       (function(){var s=${JSON.stringify(stamp)};setInterval(function(){
         if(document.hidden)return;
@@ -662,10 +709,12 @@ export function privacy({ user, supportEmail }) {
         <li><b>Your children:</b> the first name you enter for each child and, if you give it, their birth date.</li>
         <li><b>Health entries:</b> what you or your Claude save to the timeline: date and time, type, a summary, details, a temperature if given, and whether you flagged it for the doctor.</li>
         <li><b>Appointments:</b> the doctor and vaccine appointments you add, with their notes.</li>
+        <li><b>Vaccines:</b> the schedule you choose for each child, which doses you mark as given and on what date, and whether you asked for reminder emails.</li>
         <li><b>Links you create:</b> doctor share links and parent invite links.</li>
         <li><b>Sign-in records:</b> a record that your browser is signed in, and a record that your Claude is connected. These are stored in scrambled form (hashes), not as usable keys.</li>
       </ul>
       <p>KidLog uses two cookies: one that keeps you signed in, and one that remembers your time zone so dates show correctly. It has no advertising or analytics trackers.</p>
+      <p>The vaccine schedule shown in KidLog is a published standard schedule, worked out from the birth date you enter. It is not medical advice, and your paediatrician decides what your child needs.</p>
 
       <h2>What KidLog does not collect</h2>
       <p>KidLog does not read your Claude conversations. It receives only the specific entries, appointments and requests that Claude sends through the KidLog connector. It does not collect your location, contacts or payment details.</p>
@@ -684,6 +733,7 @@ export function privacy({ user, supportEmail }) {
       <ul>
         <li><b>Google</b> handles sign-in and tells us your name and email address.</li>
         <li><b>Vercel</b> hosts the KidLog website, and <b>Neon</b> hosts the database where your information is kept. Their technical logs may record your IP address and the pages requested.</li>
+        <li><b>Resend</b> sends vaccine reminder emails, only to parents who turn them on. It receives your email address and the text of the reminder, which names your child and the vaccines due.</li>
         <li><b>Anthropic</b> provides Claude. What you say to Claude, and what Claude reads from KidLog on your behalf, is handled under Anthropic's own terms and privacy policy for your Claude account. KidLog does not control that.</li>
       </ul>
       <p>We share your information with no one else, unless the law requires it.</p>
@@ -692,13 +742,14 @@ export function privacy({ user, supportEmail }) {
       <ul>
         <li>Entries, appointments, children and your family stay until you delete them or ask us to.</li>
         <li>A browser sign-in lasts up to 30 days. An unused invite link expires after 7 days.</li>
+        <li>Vaccine reminder emails stop as soon as you turn them off on a child's Vaccines page.</li>
         <li>A Claude connection that is not used for 90 days expires. You can end it sooner on the Connect Claude page.</li>
       </ul>
 
       <h2>Your choices</h2>
       <ul>
         <li>Edit or delete any entry or appointment in the app at any time.</li>
-        <li>Turn off a doctor link, cancel an invite, remove a parent, or disconnect Claude at any time.</li>
+        <li>Turn off a doctor link, cancel an invite, remove a parent, disconnect Claude, or stop reminder emails at any time.</li>
         <li>To get a copy of your information, or to have your account and your family's information deleted, write to ${contact}. We will act on it within 30 days.</li>
       </ul>
 
@@ -814,30 +865,92 @@ export function appointmentForm({ space, appt, error, isNew, children }) {
   });
 }
 
-export function kids({ space, children, error, draft = {} }) {
+export function kids({ space, children, error, draft = {}, first }) {
   const base = `/f/${esc(space.key)}`;
   const rows = children.map((c) => `<div class="kid">
       <span class="mini big">${initial(c.child)}</span>
       <div class="kinfo"><b>${esc(c.child)}</b><span>${c.dob ? esc(ageLabel(c.dob)) : 'Birth date not set'} · ${c.entries} ${c.entries === 1 ? 'entry' : 'entries'}</span></div>
       <a class="btn ghost small" href="${base}?child=${encodeURIComponent(c.child)}">Open timeline</a>
-      <a class="btn ghost small" href="${base}/kids/${c.id}">Edit</a>
+      <a class="btn ghost small" href="${base}/vaccines/${c.id}">Vaccines</a>
+      <a class="btn ghost small" href="${base}/kids/${c.id}">${c.dob ? 'Edit' : 'Add birth date'}</a>
     </div>`).join('');
   return page({
     title: 'Children · KidLog',
     nav: spaceNav(space, 'kids'),
     body: `<h1>Children</h1>
-      <p class="lead">Each child has their own timeline. A child is also added automatically the first time you tell Claude about them.</p>
+      <p class="lead">Each child has their own timeline and vaccine schedule. The birth date is needed for both.</p>
+      ${first ? '<p class="note">Add your child here first, then you can log entries and appointments.</p>' : ''}
       ${rows || '<div class="card empty">No children yet. Add your first below.</div>'}
       <h2>Add a child</h2>
       ${error ? `<div class="err">${esc(error)}</div>` : ''}
       <form method="post" action="${base}/kids" class="card">
         <div class="two">
           <div><label for="name" style="margin-top:0">First name</label><input id="name" type="text" name="name" value="${esc(draft.name || '')}" required maxlength="60"></div>
-          <div><label for="dob" style="margin-top:0">Birth date (optional)</label><input id="dob" type="date" name="dob" value="${esc(draft.dob || '')}"></div>
+          <div><label for="dob" style="margin-top:0">Birth date</label><input id="dob" type="date" name="dob" value="${esc(draft.dob || '')}" required></div>
         </div>
         <div class="row" style="margin-top:16px"><button class="btn">Add child</button></div>
       </form>`,
   });
+}
+
+export function vaccines({ space, child, children, visits, today, user, emailReady, changing, error, saved }) {
+  const b = `/f/${esc(space.key)}`;
+  const here = `${b}/vaccines/${child.id}`;
+  const chips = children.length > 1 ? `<div class="chips">${children.map((c) => `<a href="${b}/vaccines/${c.id}"${c.id === child.id ? ' class="on" aria-current="true"' : ''}>${esc(c.child)}</a>`).join('')}</div>` : '';
+  const warn = `<p class="warn"><b>Confirm with your paediatrician.</b> ${esc(DISCLAIMER)}</p>`;
+  const head = `<h1>${esc(child.child)}'s vaccines</h1>${chips}${error ? `<div class="err">${esc(error)}</div>` : ''}`;
+  const wrapPage = (body) => page({ title: `${child.child}'s vaccines · KidLog`, nav: spaceNav(space, 'vaccines'), body: head + body });
+
+  if (!child.dob) {
+    return wrapPage(`<p class="lead">The schedule is worked out from the birth date, which is not saved for ${esc(child.child)} yet.</p>
+      <p><a class="btn" href="${b}/kids/${child.id}">Add birth date</a></p>`);
+  }
+
+  const current = SCHEDULES[child.vaccine_schedule];
+  if (!current || changing) {
+    const opt = (id) => `<label class="schedopt"><input type="radio" name="schedule" value="${id}"${child.vaccine_schedule === id ? ' checked' : ''} required>
+        <span><b>${esc(SCHEDULES[id].name)}</b>${esc(SCHEDULES[id].about)}<small>${esc(SCHEDULES[id].full)}</small></span></label>`;
+    return wrapPage(`<p class="lead">Choose which standard schedule to follow for ${esc(child.child)}. If you are not sure, ask your paediatrician which one they use. You can change it later.</p>
+      ${warn}
+      <form method="post" action="${here}/schedule" class="card">
+        ${SCHEDULE_IDS.map(opt).join('')}
+        <div class="row" style="margin-top:16px"><button class="btn">Use this schedule</button>${current ? `<a class="btn ghost" href="${here}">Cancel</a>` : ''}</div>
+      </form>
+      ${current ? '<p class="lead" style="font-size:14.5px">Doses you recorded stay saved under the schedule you recorded them in. The other schedule starts with nothing ticked.</p>' : ''}`);
+  }
+
+  // Doses can be ticked once a visit is due soon, due or overdue. Visits further ahead are shown as a plain list.
+  const dose = (d, open) => d.given
+    ? `<li class="done"><span class="tick" aria-hidden="true">&#10003;</span><span><b>${esc(d.name)}</b><small>${d.given_on ? `Given ${shortDay(d.given_on).replace(/^\w+, /, '')}` : 'Given, date not recorded'}</small></span>
+        <form method="post" action="${here}/undo"><input type="hidden" name="dose" value="${esc(d.id)}"><button class="linkbtn" aria-label="Undo ${esc(d.name)}">Undo</button></form></li>`
+    : open
+      ? `<li><label><input type="checkbox" name="doses" value="${esc(d.id)}" form="f-${esc(d.id.split('.')[0])}" checked><span><b>${esc(d.name)}</b>${d.note ? `<small>${esc(d.note)}</small>` : ''}</span></label></li>`
+      : `<li><span class="dot" aria-hidden="true"></span><span><b>${esc(d.name)}</b>${d.note ? `<small>${esc(d.note)}</small>` : ''}</span></li>`;
+  const card = (v) => `<section class="vvisit s-${v.status}" id="v-${esc(v.id)}">
+      <div class="vhead"><h3>${esc(v.label)}</h3><span class="vdue">${dueText(v)}</span><span class="vstat s-${v.status}">${VSTATUS[v.status]}</span></div>
+      ${v.status === 'overdue' ? '<p class="vnote">These are past their usual date. Ask your paediatrician about catching up; do not rely on the dates here.</p>' : ''}
+      <ul class="doses">${v.doses.map((d) => dose(d, v.status !== 'upcoming' && v.status !== 'partly')).join('')}</ul>
+      ${v.pending.length && v.status !== 'upcoming' && v.status !== 'partly' ? `<form method="post" action="${here}/given" id="f-${esc(v.id)}" class="row vgive noprint">
+          <label for="d-${esc(v.id)}">Given on</label><input id="d-${esc(v.id)}" type="date" name="given_on" max="${esc(today)}" min="${esc(child.dob)}" ">
+          <button class="btn small">Mark ticked as given</button><small>Leave the date empty if you do not know it.</small></form>` : ''}
+    </section>`;
+  const emails = emailReady
+    ? `<form method="post" action="${here}/emails" class="row" style="margin:0"><input type="hidden" name="on" value="${user.vaccine_emails ? '0' : '1'}">
+         <span>${user.vaccine_emails ? `Email reminders are <b>on</b> for ${esc(user.email)}.` : `Email reminders are off for ${esc(user.email)}.`}</span>
+         <button class="btn ${user.vaccine_emails ? 'ghost' : ''} small">${user.vaccine_emails ? 'Turn off' : 'Email me reminders'}</button></form>
+       <p class="tiny">One email a week before each visit is due and one on the day, for every child in your family with a schedule. Each parent chooses for themselves.</p>`
+    : '<p class="tiny" style="margin:0">Email reminders are not set up on this site yet.</p>';
+  const given = visits.reduce((n, v) => n + v.doses.filter((d) => d.given).length, 0);
+  const total = visits.reduce((n, v) => n + v.doses.length, 0);
+  return wrapPage(`<p class="lead">${esc(ageLabel(child.dob))} · ${esc(current.name)} · ${given} of ${total} doses recorded · <a href="${here}?change=1">Change schedule</a></p>
+      ${saved ? '<p class="note good">Saved. Doses with a date were also added to the timeline.</p>' : ''}
+      ${warn}
+      <div class="card noprint"><b>Reminders</b>
+        <p class="row" style="margin:8px 0 4px"><a class="btn small" href="${here}/calendar.ics">Add to calendar</a><button type="button" class="btn ghost small" onclick="window.print()">Print record</button></p>
+        <p class="tiny">The calendar file adds the visits still to come to your phone or computer calendar, with a reminder a week before and on the day. Download it again if the birth date or schedule changes.</p>
+        <hr class="soft">${emails}</div>
+      ${visits.map(card).join('')}
+      <p class="tiny">Source: ${esc(current.source)}. <a href="${esc(current.sourceUrl)}" target="_blank" rel="noopener">Open the published schedule</a>. Due dates are counted from the birth date ${shortDay(child.dob).replace(/^\w+, /, '')}.</p>`);
 }
 
 export function kidForm({ space, kid, error }) {
@@ -846,12 +959,12 @@ export function kidForm({ space, kid, error }) {
     title: `Edit ${kid.child} · KidLog`,
     nav: spaceNav(space, 'kids'),
     body: `<h1>Edit ${esc(kid.child)}</h1>
-      <p class="lead">The birth date is used to show age on the timeline and in the doctor's view.</p>
+      <p class="lead">The birth date is used for age on the timeline and in the doctor's view, and to work out vaccine due dates. Changing it moves those dates.</p>
       ${error ? `<div class="err">${esc(error)}</div>` : ''}
       <form method="post" action="${base}/kids/${kid.id}">
         <div class="two">
           <div><label for="name">First name</label><input id="name" type="text" name="name" value="${esc(kid.child)}" required maxlength="60"></div>
-          <div><label for="dob">Birth date</label><input id="dob" type="date" name="dob" value="${esc(kid.dob || '')}"></div>
+          <div><label for="dob">Birth date</label><input id="dob" type="date" name="dob" value="${esc(kid.dob || '')}" required></div>
         </div>
         <div class="row" style="margin-top:22px"><button class="btn">Save changes</button><a class="btn ghost" href="${base}/kids">Cancel</a></div>
       </form>

@@ -4,6 +4,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import * as db from './db.js';
+import { SCHEDULES, DISCLAIMER, childSchedule } from './vaccines.js';
+import { recordDoses, today } from './vaccine-jobs.js';
 
 const INSTRUCTIONS = `KidLog keeps a parent's notes about their child's health as a dated timeline they can show a doctor.
 These tools save and read that timeline for the signed-in parent's family. The parent can edit every entry later in the KidLog web app.
@@ -12,7 +14,8 @@ How entries are written:
 - An entry records only what the parent actually said, in their facts and plain wording, without added symptoms, clinical terms, causes or severity.
 - Entries do not hold diagnoses or urgency ratings. KidLog is a record, not medical advice.
 - One entry holds one event. A message that covers several events (a fever, a medicine dose, a missed feed) becomes one entry per event.
-- A child is added automatically the first time an event is logged for them. save_child_profile sets a birth date the parent has stated.
+- A child is added automatically the first time an event is logged for them, without a birth date. save_child_profile adds a child with the birth date the parent stated, which the age and the vaccine schedule need.
+- get_vaccine_schedule shows a published standard schedule next to what the parent has recorded. It is not medical advice; the child's paediatrician decides which vaccines are given and when.
 - Future doctor or vaccine appointments go in add_appointment. log_event is for things that already happened.
 - Dates and times are the parent's local date and time. With no date given, today's date applies; with no time given, the current time.
 - Each save returns a timeline_url where the parent can review the entry.`;
@@ -61,7 +64,8 @@ function buildServer(space, baseUrl) {
     });
     if (v.error) return fail(v.error);
     const e = await db.addEntry(space.id, v.value, 'claude');
-    return ok({ saved: shape(e), timeline_url: timelineUrl, edit_url: `${timelineUrl}/e/${e.id}` });
+    const profile = (await db.listChildren(space.id)).find((c) => c.child === e.child);
+    return ok({ saved: shape(e), timeline_url: timelineUrl, edit_url: `${timelineUrl}/e/${e.id}`, ...(profile && !profile.dob ? { birth_date_missing: true } : {}) });
   });
 
   server.registerTool('get_timeline', {
@@ -112,7 +116,7 @@ function buildServer(space, baseUrl) {
   });
 
   const kids = async () => (await db.listChildren(space.id)).map((c) => ({
-    child: c.child, birth_date: c.dob, age: db.ageLabel(c.dob) || null, entries: c.entries, latest_entry: c.latest,
+    child: c.child, birth_date: c.dob, age: db.ageLabel(c.dob) || null, vaccine_schedule: SCHEDULES[c.vaccine_schedule]?.name || null, entries: c.entries, latest_entry: c.latest,
   }));
 
   server.registerTool('list_children', {
@@ -125,18 +129,73 @@ function buildServer(space, baseUrl) {
   server.registerTool('save_child_profile', {
     title: 'Add a child or set a birth date',
     description:
-      "Adds a child to the family, or sets the birth date of an existing child, replacing any saved one. The birth date is one the parent stated, not one worked out from an age.",
+      "Adds a child to the family with their birth date, or sets the birth date of an existing child, replacing any saved one. The birth date is one the parent stated, not one worked out from an age.",
     inputSchema: {
       child_name: z.string().describe("The child's first name"),
-      birth_date: z.string().optional().describe('Birth date as YYYY-MM-DD, only if the parent stated it'),
+      birth_date: z.string().describe('Birth date as YYYY-MM-DD, as the parent stated it'),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, async (a) => {
-    const dob = a.birth_date === undefined ? { value: undefined } : db.validateDob(a.birth_date);
+    const dob = db.requireDob(a.birth_date);
     if (dob.error) return fail(dob.error);
-    const r = await db.saveChild(space.id, { name: a.child_name, dob: dob.value === null ? undefined : dob.value });
+    const r = await db.saveChild(space.id, { name: a.child_name, dob: dob.value });
     if (r.error) return fail(r.error);
     return ok({ saved: (await kids()).find((c) => c.child === r.value), children_url: `${timelineUrl}/kids` });
+  });
+
+  // ---- Vaccines ----
+  const findChild = async (name) => (await db.listChildren(space.id)).find((c) => c.child.toLowerCase() === db.clean(name, 60).toLowerCase());
+  const vaccinesUrl = (c) => `${timelineUrl}/vaccines/${c.id}`;
+  const scheduleOf = async (c) => {
+    const visits = childSchedule(c.vaccine_schedule, c.dob, await db.givenDoses(c.id, c.vaccine_schedule), today());
+    return {
+      child: c.child, birth_date: c.dob, schedule: SCHEDULES[c.vaccine_schedule].full, source: SCHEDULES[c.vaccine_schedule].source, notice: DISCLAIMER,
+      visits: visits.map((v) => ({
+        visit: v.label, due_from: v.from, due_until: v.until, status: v.status,
+        doses: v.doses.map((d) => ({ id: d.id, name: d.name, ...(d.note ? { note: d.note } : {}), given: d.given, given_on: d.given_on })),
+      })),
+      vaccines_url: vaccinesUrl(c),
+    };
+  };
+  // A schedule needs a saved child with a birth date and a schedule the parent chose in the app.
+  const ready = async (name) => {
+    const c = await findChild(name);
+    if (!c) return { error: `No child named ${db.clean(name, 60)} in this family.` };
+    if (!c.dob) return { error: `${c.child} has no birth date saved, and the vaccine schedule is worked out from it. save_child_profile sets it.` };
+    if (!SCHEDULES[c.vaccine_schedule]) return { error: `No vaccine schedule has been chosen for ${c.child} yet. The parent chooses between the government and the IAP schedule at ${vaccinesUrl(c)}` };
+    return { child: c };
+  };
+
+  server.registerTool('get_vaccine_schedule', {
+    title: 'Read the vaccine schedule',
+    description:
+      "Reads a child's vaccine schedule: each visit with its due dates, its status (given, partly, overdue, due, soon, upcoming) and which doses are recorded as given. " +
+      'The dates come from a published standard schedule and the birth date. It is a record, not medical advice.',
+    inputSchema: { child_name: z.string().describe("The child's first name") },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, async (a) => {
+    const r = await ready(a.child_name);
+    return r.error ? fail(r.error) : ok(await scheduleOf(r.child));
+  });
+
+  server.registerTool('record_vaccine_doses', {
+    title: 'Record vaccines as given',
+    description:
+      'Marks doses on a child\'s vaccine schedule as given, using dose ids from get_vaccine_schedule. With a date, it also adds one vaccine entry to the timeline. ' +
+      'It records what the parent says was given; it never removes a record.',
+    inputSchema: {
+      child_name: z.string().describe("The child's first name"),
+      dose_ids: z.array(z.string()).min(1).describe('Dose ids from get_vaccine_schedule, e.g. ["6w.opv1", "6w.penta1"]'),
+      given_on: z.string().optional().describe('Date the doses were given, YYYY-MM-DD. Leave out if the parent does not know it.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async (a) => {
+    const r = await ready(a.child_name);
+    if (r.error) return fail(r.error);
+    const day = today();
+    const done = await recordDoses({ space, child: r.child, doseIds: a.dose_ids, givenOn: a.given_on || '', source: 'claude', localNow: `${day}T${new Date().toISOString().slice(11, 16)}` });
+    if (done.error) return fail(done.error);
+    return ok({ recorded: done.names, ...(await scheduleOf(r.child)) });
   });
 
   const apptShape = (a) => ({ id: a.id, child: a.child, type: a.kind, scheduled_at: a.scheduled_at, title: a.title, notes: a.notes });
